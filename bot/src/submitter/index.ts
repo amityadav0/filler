@@ -1,6 +1,11 @@
 // submitter (M3/M4): build executor.execute tx with maxPriorityFeePerGas, fresh payloads, deadline.
 import type { OpenOrder } from "../ingestor/index.js";
-import type { Bid } from "../strategy/index.js";
+
+/** A chosen priority-fee bid for an order. Populated by the M3 strategy. */
+export interface Bid {
+  maxPriorityFeePerGasWei: bigint;
+  expectedProfitOut: bigint;
+}
 
 export interface FillOutcome {
   orderHash: string;

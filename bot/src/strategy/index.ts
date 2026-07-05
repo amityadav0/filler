@@ -1,24 +1,42 @@
-// strategy (M3): profit calc, MPS→priority-fee bid, direction shading, risk caps.
-import type { RyzeQuote } from "../types.js";
-import type { OpenOrder } from "../ingestor/index.js";
+// strategy (M2 preview / M3 full): would-be P&L for a quoted order. Bid optimization + shading + caps land in M3.
+import type { ParsedOrder, RyzeQuote } from "../types.js";
+import { grossSpread, orderOutputAtBid, MPS } from "./economics.js";
 
-/** UniswapX priority MPS constant: 1e7 milli-basis-points per wei of priority fee. */
-export const MPS = 10_000_000n;
+export { MPS };
 
-export interface Bid {
-  maxPriorityFeePerGasWei: bigint;
-  expectedProfitWei: bigint;
+/** Would-be economics of filling `order` with `quote` at a candidate `bidWei`, all in output-token units. */
+export interface FillEconomics {
+  orderHash: string;
+  /** Output the order owes the swapper at this bid (baseline output scaled up by the effective priority fee). */
+  orderOwedOut: bigint;
+  /** Ryze net output the executor would receive. */
+  ryzeNetOut: bigint;
+  /** ryzeNetOut − orderOwedOut, before gas. Positive ⇒ profitable pre-gas. */
+  grossSpreadOut: bigint;
+  /** Sessionized fees the quote already priced in (observability). */
+  sessionizedSlippage: bigint;
+  sessionizedWbf: bigint;
+  wbrCredit: bigint;
 }
 
-export interface Strategy {
-  /** Decide a priority-fee bid for an order given the Ryze quote, or null to skip. */
-  decide(order: OpenOrder, quote: RyzeQuote): Bid | null;
-}
-
-export function createStrategy(): Strategy {
+/**
+ * Compute would-be fill economics at a bid. Used by the M2 dry-run to log P&L including sessionized fees.
+ * Gas is tracked separately by the submitter (denominated in the fee token, not the output token).
+ */
+export function evaluateFill(order: ParsedOrder, quote: RyzeQuote, bidWei: bigint): FillEconomics {
+  const orderOwedOut = orderOutputAtBid(
+    order.baselineAmountOut,
+    order.outputMpsPerWei,
+    bidWei,
+    order.baselinePriorityFeeWei,
+  );
   return {
-    decide(): Bid | null {
-      throw new Error("strategy not implemented (M3)");
-    },
+    orderHash: order.orderHash,
+    orderOwedOut,
+    ryzeNetOut: quote.netAmountOut,
+    grossSpreadOut: grossSpread(quote.netAmountOut, orderOwedOut),
+    sessionizedSlippage: quote.sessionizedSlippage ?? 0n,
+    sessionizedWbf: quote.sessionizedWbf ?? 0n,
+    wbrCredit: quote.wbrCredit ?? 0n,
   };
 }

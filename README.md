@@ -54,7 +54,7 @@ Configure addresses/pools/feeds/caps in `bot/config/base.json`. See [bot/README.
 |---|---|
 | M0 scaffolding | ✅ |
 | M1 executor + tests | ✅ |
-| M2 quoter + payload-service | 🚧 in progress |
+| M2 quoter + payload-service | ✅ (dry-run loop; live quoting gated on OQ-1/OQ-4) |
 | M3 strategy + submitter (shadow) | ⬜ |
 | M4 live, capped | ⬜ (owner sign-off required) |
 | M5 hardening | ⬜ |

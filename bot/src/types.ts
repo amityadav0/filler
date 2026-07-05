@@ -45,3 +45,24 @@ export interface RyzeQuote {
   sessionizedWbf?: bigint;
   wbrCredit?: bigint;
 }
+
+/** A Priority Order decoded to the fields the quoter + strategy need (all amounts as native bigint). */
+export interface ParsedOrder {
+  orderHash: string;
+  encodedOrder: `0x${string}`;
+  signature: `0x${string}`;
+  swapper: Address;
+  /** Input the filler receives (exact-in baseline). */
+  tokenIn: Address;
+  amountIn: bigint;
+  inputMpsPerWei: bigint;
+  /** Primary output owed to the swapper. */
+  tokenOut: Address;
+  baselineAmountOut: bigint;
+  outputMpsPerWei: bigint;
+  outputRecipient: Address;
+  /** Priority-auction params. */
+  baselinePriorityFeeWei: bigint;
+  auctionTargetBlock: number;
+  deadline: number;
+}

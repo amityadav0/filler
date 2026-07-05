@@ -6,17 +6,20 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "dry-run": "node --import tsx src/main.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@uniswap/uniswapx-sdk": ">=2.1.0-beta.13",
+    "@uniswap/uniswapx-sdk": "^3.0.10",
     "ethers": "^6.13.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.5.0"
   }
 }
