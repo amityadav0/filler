@@ -29,6 +29,9 @@
     "spreadCaptureBps": 6000,
     "improvingDirectionShadeBps": 500,
     "worseningDirectionShadeBps": 500,
-    "reQuotePriceMoveBps": 20
+    "reQuotePriceMoveBps": 20,
+    "gasEstimate": 350000,
+    "minProfitUsdWad": "0",
+    "maxBidPriorityFeeWei": "1000000000"
   }
 }

@@ -30,6 +30,12 @@ export interface FillerConfig {
     improvingDirectionShadeBps: number;
     worseningDirectionShadeBps: number;
     reQuotePriceMoveBps: number;
+    /** Gas units to assume for a fill when estimating gas cost in shadow mode. */
+    gasEstimate: number;
+    /** Minimum expected USD (WAD) profit to bid on an order. */
+    minProfitUsdWad: string;
+    /** Hard ceiling on the priority-fee bid (wei). */
+    maxBidPriorityFeeWei: string;
   };
 }
 

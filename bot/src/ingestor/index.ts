@@ -1,6 +1,9 @@
 // order-ingestor (M2): poll orders API (webhook later); parse Priority orders via the UniswapX SDK.
-import { CosignedPriorityOrder } from "@uniswap/uniswapx-sdk";
+// The SDK is CommonJS; Node's ESM interop only exposes its classes via the default import, not named exports.
+import sdk from "@uniswap/uniswapx-sdk";
 import type { Address, ParsedOrder } from "../types.js";
+
+const { CosignedPriorityOrder } = sdk;
 
 export interface OpenOrder {
   orderHash: string;

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "dry-run": "node --import tsx src/main.ts"
+    "dry-run": "MODE=dryrun node --import tsx src/main.ts",
+    "shadow": "MODE=shadow node --import tsx src/main.ts"
   },
   "engines": {
     "node": ">=20"

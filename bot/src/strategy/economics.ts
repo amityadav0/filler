@@ -63,3 +63,27 @@ export function orderOutputAtBid(
 export function grossSpread(ryzeNetOut: bigint, orderOwedOut: bigint): bigint {
   return ryzeNetOut - orderOwedOut;
 }
+
+/** USD value (WAD) of `amount` base units of a token with `decimals`, priced at `priceWad` per full token. */
+export function usdWad(amount: bigint, decimals: number, priceWad: bigint): bigint {
+  return (amount * priceWad) / 10n ** BigInt(decimals);
+}
+
+/**
+ * The extra output an order owes when the effective priority fee rises from 0 to `effFeeWei`
+ * (output-scaling orders only): `ceil(baseOutput * (MPS + effFee*mps)/MPS) - baseOutput`.
+ */
+export function extraOutputFromEffFee(baseOutput: bigint, mpsPerWei: bigint, effFeeWei: bigint): bigint {
+  return scaleOutputUp(baseOutput, mpsPerWei, effFeeWei) - baseOutput;
+}
+
+/**
+ * Smallest effective priority fee (wei) whose scaled-up output gives the swapper at least `extraOut` more output
+ * (output-scaling orders, `mpsPerWei > 0`). Inverts `extraOutputFromEffFee`, rounding up so the target is met.
+ * Returns 0 if `extraOut <= 0` or `mpsPerWei == 0`.
+ */
+export function effFeeForExtraOut(baseOutput: bigint, mpsPerWei: bigint, extraOut: bigint): bigint {
+  if (extraOut <= 0n || mpsPerWei === 0n || baseOutput === 0n) return 0n;
+  // extraOut ≈ baseOutput * effFee * mpsPerWei / MPS  ⇒  effFee ≈ extraOut * MPS / (baseOutput * mpsPerWei)
+  return mulDivUp(extraOut, MPS, baseOutput * mpsPerWei);
+}
