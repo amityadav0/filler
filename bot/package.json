@@ -1,0 +1,22 @@
+{
+  "name": "ryze-uniswapx-filler",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Off-chain filler for UniswapX Priority Orders on Base, sourcing liquidity from Ryze SmartShield pools.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@uniswap/uniswapx-sdk": ">=2.1.0-beta.13",
+    "ethers": "^6.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}

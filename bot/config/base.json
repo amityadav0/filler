@@ -1,0 +1,34 @@
+{
+  "chainId": 8453,
+  "chainName": "base",
+  "ordersApi": "https://api.uniswap.org/v2/orders?orderStatus=open&orderType=Priority&chainId=8453",
+  "addresses": {
+    "reactor": "0x000000001Ec5656dcdB24D90DFa42742738De729",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "weth": "0x4200000000000000000000000000000000000006",
+    "ryzeRouter": "0x0000000000000000000000000000000000000000",
+    "ryzeQueries": "0x0000000000000000000000000000000000000000",
+    "ryzeOracle": "0x0000000000000000000000000000000000000000",
+    "executor": "0x0000000000000000000000000000000000000000"
+  },
+  "_addressesTodo": "ryzeRouter/ryzeQueries/ryzeOracle set once Ryze is deployed on Base (OQ-4); executor set after M1 deploy.",
+  "pools": [],
+  "_poolsSchema": {
+    "pool": "WeightedPool address",
+    "tokens": ["asset addresses in pool order"],
+    "feedIds": { "<tokenAddress>": "<pyth-lazer-feed-id>" },
+    "bandLimits": { "maxNotionalUsdWad": "18-dec USD cap per fill for this pool" }
+  },
+  "caps": {
+    "maxNotionalUsdWadPerFill": "0",
+    "maxOpenExposureUsdWadPerToken": "0",
+    "maxRevertGasWeiPerHour": "0",
+    "payloadMaxAgeMs": 2000
+  },
+  "strategy": {
+    "spreadCaptureBps": 6000,
+    "improvingDirectionShadeBps": 500,
+    "worseningDirectionShadeBps": 500,
+    "reQuotePriceMoveBps": 20
+  }
+}
