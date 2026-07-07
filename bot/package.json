@@ -9,7 +9,8 @@
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "dry-run": "MODE=dryrun node --import tsx src/main.ts",
-    "shadow": "MODE=shadow node --import tsx src/main.ts"
+    "shadow": "MODE=shadow node --import tsx src/main.ts",
+    "fork-fill": "node --import tsx src/forkFill.ts"
   },
   "engines": {
     "node": ">=20"

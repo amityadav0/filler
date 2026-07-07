@@ -15,7 +15,11 @@
   "oracle": {
     "pDeltaWad": "5000000000000000",
     "tToleranceMs": 3000,
-    "cexAssets": ["ETHUSD", "BTCUSD", "USDCUSD"],
+    "cexAssets": [
+      "ETHUSD",
+      "BTCUSD",
+      "USDCUSD"
+    ],
     "cexTokenMap": {
       "ETHUSD": "0x4200000000000000000000000000000000000006",
       "BTCUSD": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
@@ -34,7 +38,9 @@
         "0x4200000000000000000000000000000000000006": "631",
         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": "7"
       },
-      "bandLimits": { "maxNotionalUsdWad": "25000000000000000000000" }
+      "bandLimits": {
+        "maxNotionalUsdWad": "25000000000000000000000"
+      }
     },
     {
       "pool": "0x40F3DAaE59BfE03f9Fb019Bb089Bb0C381DE27Cf",
@@ -46,14 +52,22 @@
         "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf": "397",
         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": "7"
       },
-      "bandLimits": { "maxNotionalUsdWad": "25000000000000000000000" }
+      "bandLimits": {
+        "maxNotionalUsdWad": "25000000000000000000000"
+      }
     }
   ],
   "_poolsSchema": {
     "pool": "WeightedPool address",
-    "tokens": ["asset addresses in pool order"],
-    "feedIds": { "<tokenAddress>": "<pyth-lazer-feed-id>" },
-    "bandLimits": { "maxNotionalUsdWad": "18-dec USD cap per fill for this pool (OQ-5: tune to band-1 external liquidity)" }
+    "tokens": [
+      "asset addresses in pool order"
+    ],
+    "feedIds": {
+      "<tokenAddress>": "<pyth-lazer-feed-id>"
+    },
+    "bandLimits": {
+      "maxNotionalUsdWad": "18-dec USD cap per fill for this pool (OQ-5: tune to band-1 external liquidity)"
+    }
   },
   "caps": {
     "maxNotionalUsdWadPerFill": "10000000000000000000000",
@@ -66,8 +80,9 @@
     "improvingDirectionShadeBps": 500,
     "worseningDirectionShadeBps": 500,
     "reQuotePriceMoveBps": 20,
-    "gasEstimate": 350000,
+    "gasEstimate": 1300000,
     "minProfitUsdWad": "0",
-    "maxBidPriorityFeeWei": "1000000000"
+    "maxBidPriorityFeeWei": "1000000000",
+    "_gasEstimateNote": "fork-fill measured 1.15M gas for a real 1-hop fill (Permit2 + reactor + oracle verify + swap); 1.3M adds headroom. 350k (old value) would out-of-gas every fill."
   }
 }

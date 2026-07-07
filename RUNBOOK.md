@@ -63,9 +63,9 @@ Then set the printed address as `addresses.executor` in `bot/config/base.json`.
 
 ## 3. Whitelist / approvals (owner op)
 
-- If `pauseDirectSwap` is enabled on the router (**OQ-2 — confirm on Base**), the Ryze pool owner
-  (`0x0A2C…`) must add the executor to `isWhitelistedIntentSwapper`. Do this regardless so a future pause can't
-  kill the filler.
+- **`pauseDirectSwap` is TRUE on Base (OQ-2 resolved, fork-verified 2026-07-07)** — whitelisting is a HARD
+  dependency: the Ryze pool owner (`0x0A2C…`) must call `setWhitelistedIntentSwapper(executor, true)` on the
+  router before ANY fill can execute.
 - The executor must approve the router for each input token. The deploy script does this for USDC/WETH/WBTC when
   the deployer is the owner; otherwise call `approveRouter(token, type(uint256).max)` from the owner key.
 
@@ -76,6 +76,21 @@ cd bot && npm ci
 MODE=dryrun npm run dry-run     # quote live orders, log would-be spread; sends nothing
 MODE=shadow  npm run shadow      # quote → bid → BUILD fill tx (never sent); logs would-be P&L
 ```
+
+### 4b. Mainnet-fork fill (go/no-go gate — PASSED 2026-07-07)
+
+`bot/src/forkFill.ts` executes a REAL fill on an anvil fork of Base with nothing mocked: real reactor
+(Permit2 pull + callback + `_fill`), real router + oracle verifying LIVE Pyth/signed-CEX payloads, real pool
+swap, driven by the bot's own quoter → strategy → submitter:
+
+```bash
+anvil --fork-url $RPC_URL --port 8546          # terminal 1
+cd bot && PYTH_PRO_ACCESS_TOKEN=... FORK_RPC_URL=http://127.0.0.1:8546 npm run fork-fill
+```
+
+Verified result: swapper received EXACTLY the order-owed output (MPS auction math matches the reactor
+bit-for-bit), executor kept ~1.1% spread (~$10 on 0.5 WETH), gas ≈ 1.15M (hence `strategy.gasEstimate` = 1.3M).
+Re-run after any executor or payload-pipeline change.
 
 Let shadow run ~1 week. Review logs for: bid rate, would-be win P&L, sessionized fees, and the
 `skip.*` reasons (`no_spread`, `below_min_profit`, `notional_over_cap`, `exposure_over_cap`,
@@ -103,5 +118,6 @@ Only after shadow review + sign-off:
 
 ## 7. Open questions gating live
 
-OQ-1 (payload client reconcile — §1), OQ-2 (`pauseDirectSwap` on Base — §3), OQ-3 (direct vs intent lane),
-OQ-4/OQ-5 (pairs & sizes — resolved by §4 shadow data).
+OQ-1 resolved (§1: wire format + feed coverage). OQ-2 resolved (§3: `pauseDirectSwap` = true ⇒ whitelist is a
+hard owner op). OQ-3 (direct vs intent lane) open but non-blocking — fork fill executed via direct `swapExactIn`.
+OQ-4/OQ-5 (pairs & sizes) — resolved by §4 shadow data.

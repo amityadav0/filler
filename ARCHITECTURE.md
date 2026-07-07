@@ -147,7 +147,10 @@ Rule for agents: milestones are sequential; do not start M4 without explicit own
   `PythProOracle._updatePriceFeedsArray`), and we send one bundled blob so `n = 1`. **Coverage is resolved:** the
   signed-CEX feed is split across two hosts (USDC on `us1.mainnet.pricing.ryze.pro`, ETH+BTC on
   `us-signed-price-4tyzr.ondigitalocean.app`); subscribe to BOTH (comma-separated `RYZE_PRICING_URL`).
-- **OQ-2:** Is `pauseDirectSwap` expected to be enabled on Base? If yes, executor whitelisting becomes a hard M4 dependency. (Whitelist authority = Ryze pool owner `0x0A2C…`.)
+- **OQ-2 (resolved 2026-07-07):** `pauseDirectSwap` **is enabled** on Base (fork-verified) ⇒ executor
+  whitelisting (`setWhitelistedIntentSwapper`, authority = Ryze pool owner `0x0A2C…`) is a **hard M4
+  dependency** — no fill can execute without it. The `bot/src/forkFill.ts` mainnet-fork harness proved the full
+  fill end-to-end (real reactor/router/oracle/pool, live payloads, exact MPS settlement; RUNBOOK §4b).
 - **OQ-3:** `intentFee` lane vs direct swap — direct `swapExactIn` avoids the intent fee; confirm no plan to restrict direct swaps to the intent lane.
 - **OQ-4 (resolved):** Ryze is live on Base — first pairs are **WETH-USDC** and **WBTC-USDC** (addresses in `bot/config/base.json`). Confirm typical order flow/sizes against these during M3 shadow.
 - **OQ-5:** Ryze quotes vs order sizes — verify typical UniswapX Base order notionals sit inside band-1 external liquidity ratios; otherwise quoting degrades exactly where flow is. (Per-pool `bandLimits.maxNotionalUsdWad` set to a 25k placeholder — tune from shadow data.)

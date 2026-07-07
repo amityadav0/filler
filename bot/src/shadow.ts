@@ -48,6 +48,14 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
   const weth = config.addresses.weth.toLowerCase();
   const exposure = deps.exposure ?? createExposureTracker(0n);
 
+  // Payloads must cover EVERY asset with a subscribed Pyth feed, not just the fill pair: the Lazer blob bundles
+  // all subscribed feeds, and PythProOracle._parseAndStore reverts (PriceOracle_InvalidCexPrice) for any fresh
+  // feed lacking a matching signed CEX price. Same reason the limit-order-bot sends ALL cached prices
+  // (GetAllPriceForAmm). This also guarantees the WETH price is present for USD gas costing.
+  const allAssets: Address[] = [
+    ...new Set(config.pools.flatMap((p) => p.tokens.map((t) => t.toLowerCase()))),
+  ].map((t) => t as Address);
+
   const block = await deps.provider.getBlock("latest");
   const baseFeeWei = block?.baseFeePerGas ?? 0n;
 
@@ -66,12 +74,7 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
     }
 
     try {
-      // Always include the native (WETH) asset so gas can be costed in USD even when neither pair token is WETH
-      // (e.g. WBTC->USDC). The extra signed price simply rides along in cexPriceData — the same "send all prices"
-      // shape the limit-order-bot reference uses (GetAllPriceForAmm).
-      const assets: Address[] = [parsed.tokenIn, parsed.tokenOut];
-      if (!assets.some((a) => a.toLowerCase() === weth)) assets.push(wethAddr);
-      const payloads = await deps.payloads.getPayloads(assets);
+      const payloads = await deps.payloads.getPayloads(allAssets);
       const quote = await deps.quoter.quoteExactIn(parsed.tokenIn, parsed.tokenOut, parsed.amountIn, payloads);
       deps.metrics.inc("orders.quoted");
       if (!quote) {
