@@ -16,10 +16,12 @@
   },
   "dependencies": {
     "@uniswap/uniswapx-sdk": "^3.0.10",
-    "ethers": "^6.13.0"
+    "ethers": "^6.13.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.10",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
   }

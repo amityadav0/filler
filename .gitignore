@@ -15,3 +15,8 @@ dist/
 
 # OS
 .DS_Store
+
+execution-relayer/
+ryze-api/
+ryze-contracts/
+limit-order-bot/

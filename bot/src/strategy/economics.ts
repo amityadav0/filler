@@ -56,6 +56,46 @@ export function orderOutputAtBid(
   return scaleOutputUp(baseOutput, mpsPerWei, effectivePriorityFee(bidWei, baselinePriorityFeeWei));
 }
 
+/** One output leg for multi-output economics: its baseline amount and per-wei scaling factor. */
+export interface OutputLeg {
+  amount: bigint;
+  mpsPerWei: bigint;
+}
+
+/** Total baseline output across all legs (effective priority fee 0). */
+export function sumBaseOutput(legs: OutputLeg[]): bigint {
+  let s = 0n;
+  for (const l of legs) s += l.amount;
+  return s;
+}
+
+/**
+ * Aggregate scaling weight `Σ amount·mpsPerWei` across legs. The extra output owed grows ≈ `weight·effFee/MPS`,
+ * so this is the slope used to invert a target extra-output back to an effective priority fee.
+ */
+export function outputWeight(legs: OutputLeg[]): bigint {
+  let w = 0n;
+  for (const l of legs) w += l.amount * l.mpsPerWei;
+  return w;
+}
+
+/** Exact total output owed across all legs at an effective priority fee (each leg rounds up, as on-chain). */
+export function totalOwedAtEffFee(legs: OutputLeg[], effFeeWei: bigint): bigint {
+  let s = 0n;
+  for (const l of legs) s += scaleOutputUp(l.amount, l.mpsPerWei, effFeeWei);
+  return s;
+}
+
+/**
+ * Smallest effective priority fee (wei) whose scaled-up outputs give the swapper at least `extraOut` more total
+ * output, given the aggregate `weight` = `Σ amount·mpsPerWei`. Inverts {totalOwedAtEffFee}'s linear slope,
+ * rounding up so the target is met. Returns 0 if `extraOut <= 0` or `weight == 0`.
+ */
+export function effFeeForExtraOutWeighted(weight: bigint, extraOut: bigint): bigint {
+  if (extraOut <= 0n || weight <= 0n) return 0n;
+  return mulDivUp(extraOut, MPS, weight);
+}
+
 /**
  * Gross spread in output-token units at a bid: what Ryze delivers minus what the order owes the swapper.
  * Positive means the fill is profitable before gas.

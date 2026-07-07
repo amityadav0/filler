@@ -8,7 +8,7 @@ const USDC: Address = "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA";
 const WETH: Address = "0x4200000000000000000000000000000000000006";
 
 // Chosen so the arithmetic is exact: baseline 1e6, mpsPerWei 1, MPS 1e7 ⇒ +1 output per 10 wei of effective fee.
-function order(): ParsedOrder {
+function order(over: Partial<ParsedOrder> = {}): ParsedOrder {
   return {
     orderHash: "0xorderhash",
     encodedOrder: "0x",
@@ -17,13 +17,14 @@ function order(): ParsedOrder {
     tokenIn: USDC,
     amountIn: 1_000_000_000n,
     inputMpsPerWei: 0n,
+    outputs: [{ token: WETH, settlementToken: WETH, amount: 1_000_000n, mpsPerWei: 1n, recipient: A }],
     tokenOut: WETH,
-    baselineAmountOut: 1_000_000n,
-    outputMpsPerWei: 1n,
-    outputRecipient: A,
+    hasNativeOutput: false,
+    multiToken: false,
     baselinePriorityFeeWei: 0n,
     auctionTargetBlock: 0,
     deadline: 0,
+    ...over,
   };
 }
 
@@ -94,4 +95,34 @@ test("gas is priced into profit and gates on min profit", () => {
   // captured 60 units * $1 = 60e18 wad gross. Set min profit above that ⇒ skip.
   const r = decideBid(order(), quote(), ctx({ minProfitUsdWad: 100_000_000_000_000_000_000n }));
   assert.equal(r.kind, "skip");
+});
+
+test("skips exact-output (input-scaling) orders", () => {
+  const r = decideBid(order({ inputMpsPerWei: 1n }), quote(), ctx());
+  assert.equal(r.kind, "skip");
+  if (r.kind === "skip") assert.equal(r.reason, "input-scaling unsupported");
+});
+
+test("skips orders whose legs span multiple settlement tokens", () => {
+  const r = decideBid(order({ multiToken: true }), quote(), ctx());
+  assert.equal(r.kind, "skip");
+  if (r.kind === "skip") assert.equal(r.reason, "multi-token outputs");
+});
+
+test("multi-output: owed and spread account for ALL legs (main + fee)", () => {
+  // Two legs in WETH: main 1e6 + fee 2e5 = 1.2e6 baseline owed. rawSpread over 1.2e6 must use the sum.
+  const twoLeg = order({
+    outputs: [
+      { token: WETH, settlementToken: WETH, amount: 1_000_000n, mpsPerWei: 1n, recipient: A },
+      { token: WETH, settlementToken: WETH, amount: 200_000n, mpsPerWei: 0n, recipient: USDC },
+    ],
+  });
+  // netOut 1_300_000 ⇒ rawSpread = 1_300_000 - 1_200_000 = 100_000. Capture 60% (shading off) ⇒ keep 60_000.
+  const r = decideBid(twoLeg, quote({ netAmountOut: 1_300_000n }), ctx({ improvingShadeBps: 0, worseningShadeBps: 0 }));
+  assert.equal(r.kind, "bid");
+  if (r.kind !== "bid") return;
+  assert.equal(r.decision.capturedSpreadOut, 60_000n);
+  // orderOwedOut must exceed the summed baseline (1.2e6), proving both legs are covered.
+  assert.ok(r.decision.orderOwedOut >= 1_200_000n);
+  assert.equal(r.decision.orderOwedOut, 1_300_000n - 60_000n);
 });

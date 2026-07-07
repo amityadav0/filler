@@ -1,6 +1,8 @@
 # Ryze UniswapX Filler — Architecture & Implementation Plan
 
-> **Status:** M0 (scaffolding) + M1 (on-chain executor + tests) implemented. M2+ (bot) is scaffolded-only. See §7.
+> **Status:** M0–M3 implemented. On-chain executor + tests (M1); bot quoter/strategy/submitter run in **shadow
+> mode** (M3). Base deployment wired into `bot/config/base.json` (OQ-4 resolved). Remaining before M4: reconcile
+> the payload client wire-format (OQ-1), deploy the executor, owner sign-off. Deploy/go-live: `RUNBOOK.md`. See §7.
 > **Owner:** Amit. This doc is the handoff spec — any agent picking up a milestone should read this file, then `/CLAUDE.md` (system guide), then the referenced source files.
 
 ---
@@ -98,7 +100,7 @@ Modules (keep them separate files/services — the quoter and payload-service ge
 | Module | Responsibility |
 |---|---|
 | `order-ingestor` | Poll orders API every ~1s (webhook later). Filter: chainId 8453, tokens with a Ryze pool path, size within band limits. Track order lifecycle to avoid duplicate bids. |
-| `payload-service` | Maintain hot cache of latest Pyth Lazer payloads + signed CEX prices for all Ryze pool assets (same feed pipeline production uses — check `script/` deploy config and the adjacent `perpetual-bot` project for reusable client code). Expose `getPayloads(assets[]) → {pythUpdateData, cexPriceData, prices: TokenPrice[]}` with freshness timestamps. |
+| `payload-service` | Maintain hot cache of latest Pyth Lazer payloads + signed CEX prices for all Ryze pool assets (same feed pipeline production uses — **reference client: `limit-order-bot/` (Go, in this repo): `internal/oracle/cex_oracle.go` (signed-CEX WS), `internal/oracle/pyth_price.go` (Pyth Lazer WS), `internal/executor/executor_amm.go` (fill assembly); also `../ryze-router`**). Expose `getPayloads(assets[]) → {pythUpdateData, cexPriceData, prices: TokenPrice[]}` with freshness timestamps. |
 | `quoter` | Best Ryze path (single/multi-hop over configured pools) via `querySwapExactIn` `eth_call` with `from = executor`. Returns net out incl. sessionized fees + WBR. |
 | `strategy` | Profit: `profit(bid) = ryzeNetOut − orderOutput(bid) − gasCost(bid)` where `orderOutput(bid) = baselineOut × (1 + mps(bid)/1e7)`, `mps(bid) = max(0, bid − baselinePriorityFeeWei)`. Pick bid targeting configured margin (start: capture ~50–80% of observed spread; tune from win/loss data). Shade up on improving-direction fills (WBR/fee suppression), down on worsening (WBF). Enforce caps: max notional/fill, max open exposure/token, max reverted-gas spend/hour, payload max-age. |
 | `submitter` | Build `executor.execute` tx with `maxPriorityFeePerGas = bid`, fresh payloads fetched at send time, `deadline` = now + small buffer. Target `auctionTargetBlock` (cosigned earlier start if present). Track win/revert outcomes + P&L per fill. |
@@ -137,11 +139,14 @@ Rule for agents: milestones are sequential; do not start M4 without explicit own
 
 ## 8. Open questions (resolve before M2/M4)
 
-- **OQ-1:** Who signs `cexPriceData` in production and can the bot consume that stream? (Check `PythProOracle` config + deploy scripts; may require an internal signing service endpoint.)
-- **OQ-2:** Is `pauseDirectSwap` expected to be enabled on Base? If yes, executor whitelisting becomes a hard M4 dependency.
+- **OQ-1 (partially resolved):** Signed CEX prices come from `us1.mainnet.pricing.ryze.pro`; Pyth Lazer via the Pro
+  websocket stream (token held out-of-band). Endpoints wired (`bot/src/env.ts` + `payloads/source.ts`). **Remaining:**
+  reconcile the websocket subscribe + signed-CEX response mapping against the `limit-order-bot` reference (`RECONCILE`
+  markers in `source.ts`) before trusting live prices.
+- **OQ-2:** Is `pauseDirectSwap` expected to be enabled on Base? If yes, executor whitelisting becomes a hard M4 dependency. (Whitelist authority = Ryze pool owner `0x0A2C…`.)
 - **OQ-3:** `intentFee` lane vs direct swap — direct `swapExactIn` avoids the intent fee; confirm no plan to restrict direct swaps to the intent lane.
-- **OQ-4:** Which pairs first? Needs a list of live Base pools + their band configs vs UniswapX flow on those tokens (pull a week of order data in M2 dry-run to decide).
-- **OQ-5:** Ryze quotes vs order sizes — verify typical UniswapX Base order notionals sit inside band-1 external liquidity ratios; otherwise quoting degrades exactly where flow is.
+- **OQ-4 (resolved):** Ryze is live on Base — first pairs are **WETH-USDC** and **WBTC-USDC** (addresses in `bot/config/base.json`). Confirm typical order flow/sizes against these during M3 shadow.
+- **OQ-5:** Ryze quotes vs order sizes — verify typical UniswapX Base order notionals sit inside band-1 external liquidity ratios; otherwise quoting degrades exactly where flow is. (Per-pool `bandLimits.maxNotionalUsdWad` set to a 25k placeholder — tune from shadow data.)
 
 ## 9. Repo layout
 

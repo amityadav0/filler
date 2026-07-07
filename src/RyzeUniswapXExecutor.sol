@@ -48,12 +48,17 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
     /// @param deadline Router-side swap deadline.
     /// @param pythUpdateData Pyth Lazer price update blobs for the pool assets (freshness-checked on-chain).
     /// @param cexPriceData Signed CEX prices for oracle verification.
+    /// @param pythFeeWei Native fee to forward to the router for on-chain Pyth verification: the router forwards
+    ///        it to `PythProOracle.updatePriceFeedsArray{value: msg.value}`, which requires
+    ///        `msg.value >= pythLazer.verification_fee() * (non-empty pythUpdateData blobs)`. Any excess is NOT
+    ///        refunded, so this must be exact. The executor forwards it from its own ETH balance.
     struct FillData {
         IRyzeRouter.Hop[] path;
         uint256 minAmountOut;
         uint256 deadline;
         bytes[] pythUpdateData;
         IRyzeRouter.CexPriceData[] cexPriceData;
+        uint256 pythFeeWei;
     }
 
     /// @notice Emitted when the operator is changed.
@@ -96,7 +101,10 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
     /// @notice Submit a fill for a single signed Priority Order.
     /// @param order The signed UniswapX order to fill.
     /// @param fillData ABI-encoded {FillData} describing the Ryze swap that sources the output.
-    function execute(SignedOrder calldata order, bytes calldata fillData) external onlyOperator {
+    /// @dev Payable so the operator can attach the exact Pyth verification fee for this fill; the executor may
+    ///      also pay it from a pre-funded ETH balance. Not forwarded to the reactor — it is spent inside the
+    ///      callback by {reactorCallback} when it calls the router.
+    function execute(SignedOrder calldata order, bytes calldata fillData) external payable onlyOperator {
         reactor.executeWithCallback(order, fillData);
     }
 
@@ -116,7 +124,9 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
         address tokenIn = address(order.input.token);
         address tokenOut = fillData.path[fillData.path.length - 1].tokenOut;
         IERC20(tokenIn).forceApprove(address(router), order.input.amount);
-        router.swapExactIn(
+        // Forward the Pyth verification fee: the router relays it to the oracle, which reverts without it.
+        // Excess is not refunded by the oracle, so the caller sets `pythFeeWei` exactly.
+        router.swapExactIn{value: fillData.pythFeeWei}(
             IRyzeRouter.SwapParams({
                 tokenIn: tokenIn,
                 tokenOut: tokenOut,

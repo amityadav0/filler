@@ -10,7 +10,8 @@ const FILL_DATA_TYPE =
   "uint256 minAmountOut, " +
   "uint256 deadline, " +
   "bytes[] pythUpdateData, " +
-  "tuple(address token, uint256 priceInWad, uint256 timestamp, uint8 v, bytes32 r, bytes32 s)[] cexPriceData)";
+  "tuple(address token, uint256 priceInWad, uint256 timestamp, uint8 v, bytes32 r, bytes32 s)[] cexPriceData, " +
+  "uint256 pythFeeWei)";
 
 const EXECUTOR_ABI = ["function execute(tuple(bytes order, bytes sig) order, bytes fillData)"];
 
@@ -29,6 +30,8 @@ export interface FillTxInputs {
   deadline: number;
   pythUpdateData: `0x${string}`[];
   cexPriceData: CexPriceData[];
+  /** Native Pyth verification fee to forward (= pythLazer.verification_fee() × non-empty pyth blobs). Exact. */
+  pythFeeWei: bigint;
   bidWei: bigint;
   baseFeeWei: bigint;
   gasLimit: bigint;
@@ -53,7 +56,7 @@ export function encodeFillData(inputs: FillTxInputs): string {
   const cex = inputs.cexPriceData.map((c) => [c.token, c.priceInWad, c.timestamp, c.v, c.r, c.s]);
   return AbiCoder.defaultAbiCoder().encode(
     [FILL_DATA_TYPE],
-    [[path, inputs.minAmountOut, inputs.deadline, inputs.pythUpdateData, cex]],
+    [[path, inputs.minAmountOut, inputs.deadline, inputs.pythUpdateData, cex, inputs.pythFeeWei]],
   );
 }
 
@@ -65,7 +68,8 @@ export function buildFillTx(executor: Address, chainId: number, inputs: FillTxIn
   return {
     to: executor,
     data,
-    value: 0n,
+    // Attach the Pyth verification fee; execute() is payable and the executor forwards it to the router.
+    value: inputs.pythFeeWei,
     chainId,
     type: 2,
     maxPriorityFeePerGas: inputs.bidWei,

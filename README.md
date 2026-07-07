@@ -54,10 +54,13 @@ Configure addresses/pools/feeds/caps in `bot/config/base.json`. See [bot/README.
 |---|---|
 | M0 scaffolding | ✅ |
 | M1 executor + tests | ✅ |
-| M2 quoter + payload-service | ✅ (dry-run loop; live quoting gated on OQ-1/OQ-4) |
+| M2 quoter + payload-service | ✅ (Base config wired; payload source scaffolded, OQ-1 wire-format reconcile remaining) |
 | M3 strategy + submitter (shadow) | ✅ (bid + build fill tx, never sent; `MODE=shadow npm run shadow`) |
-| M4 live, capped | ⬜ (owner sign-off required) |
+| M4 live, capped | ⬜ (deploy executor + owner sign-off required — see [RUNBOOK.md](./RUNBOOK.md)) |
 | M5 hardening | ⬜ |
+
+Deploy + go-live steps: **[RUNBOOK.md](./RUNBOOK.md)**. OQ-4 (Base deployment / pairs) is resolved — Ryze is live
+on Base (WETH-USDC, WBTC-USDC) and `bot/config/base.json` is populated.
 
 ## Key references
 

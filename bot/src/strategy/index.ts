@@ -2,15 +2,22 @@
 import type { ParsedOrder, RyzeQuote } from "../types.js";
 import {
   grossSpread,
-  orderOutputAtBid,
   effectivePriorityFee,
-  effFeeForExtraOut,
-  extraOutputFromEffFee,
+  effFeeForExtraOutWeighted,
+  sumBaseOutput,
+  outputWeight,
+  totalOwedAtEffFee,
   usdWad,
   MPS,
+  type OutputLeg,
 } from "./economics.js";
 
 export { MPS };
+
+/** Output legs (baseline amount + scaling factor) for multi-output economics. */
+function legsOf(order: ParsedOrder): OutputLeg[] {
+  return order.outputs.map((o) => ({ amount: o.amount, mpsPerWei: o.mpsPerWei }));
+}
 
 /** Would-be economics of filling `order` with `quote` at a candidate `bidWei`, all in output-token units. */
 export interface FillEconomics {
@@ -32,12 +39,8 @@ export interface FillEconomics {
  * Gas is tracked separately by the submitter (denominated in the fee token, not the output token).
  */
 export function evaluateFill(order: ParsedOrder, quote: RyzeQuote, bidWei: bigint): FillEconomics {
-  const orderOwedOut = orderOutputAtBid(
-    order.baselineAmountOut,
-    order.outputMpsPerWei,
-    bidWei,
-    order.baselinePriorityFeeWei,
-  );
+  const effFee = effectivePriorityFee(bidWei, order.baselinePriorityFeeWei);
+  const orderOwedOut = totalOwedAtEffFee(legsOf(order), effFee);
   return {
     orderHash: order.orderHash,
     orderOwedOut,
@@ -113,12 +116,18 @@ function clampBps(bps: number): bigint {
  * Improving-direction flow shades `capture` down (bid up); worsening flow shades it up (bid down).
  */
 export function decideBid(order: ParsedOrder, quote: RyzeQuote, ctx: BidContext): BidResult {
+  // Unsupported order shapes: an exact-output order (input scales down) is not modeled, and an order whose legs
+  // span multiple settlement tokens can't be sourced by a single Ryze swap.
+  if (order.inputMpsPerWei > 0n) return { kind: "skip", reason: "input-scaling unsupported" };
+  if (order.multiToken) return { kind: "skip", reason: "multi-token outputs" };
+
   if (ctx.maxNotionalUsdWad > 0n && ctx.notionalUsdWad > ctx.maxNotionalUsdWad) {
     return { kind: "skip", reason: "notional over cap" };
   }
 
-  // Raw spread at the minimum bid (effective fee 0): the whole surplus available to split.
-  const baseOwed = orderOutputAtBid(order.baselineAmountOut, order.outputMpsPerWei, order.baselinePriorityFeeWei, order.baselinePriorityFeeWei);
+  const legs = legsOf(order);
+  // Raw spread at the minimum bid (effective fee 0): the whole surplus available to split, over ALL legs.
+  const baseOwed = sumBaseOutput(legs);
   const rawSpread = quote.netAmountOut - baseOwed;
   if (rawSpread <= 0n) return { kind: "skip", reason: "no spread" };
 
@@ -130,7 +139,8 @@ export function decideBid(order: ParsedOrder, quote: RyzeQuote, ctx: BidContext)
 
   // Offer the swapper (1 - capture) of the raw spread as extra output, then find the fee that delivers it.
   const offerToSwapper = (rawSpread * (BPS - captureBps)) / BPS;
-  let effFee = effFeeForExtraOut(order.baselineAmountOut, order.outputMpsPerWei, offerToSwapper);
+  const weight = outputWeight(legs);
+  let effFee = effFeeForExtraOutWeighted(weight, offerToSwapper);
   let bidWei = order.baselinePriorityFeeWei + effFee;
 
   // Cap the bid; recompute the effective fee under the ceiling.
@@ -139,8 +149,7 @@ export function decideBid(order: ParsedOrder, quote: RyzeQuote, ctx: BidContext)
     effFee = effectivePriorityFee(bidWei, order.baselinePriorityFeeWei);
   }
 
-  const extraOwed = extraOutputFromEffFee(order.baselineAmountOut, order.outputMpsPerWei, effFee);
-  const orderOwedOut = baseOwed + extraOwed;
+  const orderOwedOut = totalOwedAtEffFee(legs, effFee);
   const capturedSpreadOut = quote.netAmountOut - orderOwedOut;
   if (capturedSpreadOut <= 0n) return { kind: "skip", reason: "spread consumed by bid" };
 

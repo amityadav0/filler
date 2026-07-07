@@ -4,10 +4,17 @@ import { JsonRpcProvider } from "ethers";
 import { loadConfig, type FillerConfig } from "./config.js";
 import { createIngestor } from "./ingestor/index.js";
 import { createPayloadService, createUnconfiguredSource, type PayloadSource } from "./payloads/index.js";
+import {
+  createRyzeSignedPriceSource,
+  createCexWsClient,
+  createPythLazerWsClient,
+} from "./payloads/source.js";
+import { hasPayloadEnv, loadPayloadEnv } from "./env.js";
 import { createQuoter } from "./quoter/index.js";
 import { createSubmitter } from "./submitter/index.js";
 import { createTokenMeta } from "./chain/tokens.js";
 import { createMetrics } from "./metrics/index.js";
+import { createExposureTracker } from "./strategy/risk.js";
 import { runDryRunPass } from "./dryRun.js";
 import { runShadowPass } from "./shadow.js";
 
@@ -25,7 +32,7 @@ export function createFiller(opts: FillerOptions = {}) {
 
   const ingestor = createIngestor({ ordersApi: config.ordersApi, chainId: config.chainId });
   const payloads = createPayloadService({
-    source: opts.payloadSource ?? createUnconfiguredSource(),
+    source: opts.payloadSource ?? defaultPayloadSource(config),
     maxAgeMs: config.caps.payloadMaxAgeMs,
   });
   const quoter = createQuoter({
@@ -41,6 +48,33 @@ export function createFiller(opts: FillerOptions = {}) {
   return { config, provider, ingestor, payloads, quoter, submitter, tokenMeta, metrics };
 }
 
+/** Real payload source when the pipeline env is set; otherwise the unconfigured stub (throws on use). */
+function defaultPayloadSource(config: FillerConfig): PayloadSource {
+  if (!hasPayloadEnv()) return createUnconfiguredSource();
+  const env = loadPayloadEnv();
+  const feedIdByToken: Record<string, string> = {};
+  const feedIds = new Set<number>();
+  for (const p of config.pools) {
+    for (const [token, feedId] of Object.entries(p.feedIds)) {
+      feedIdByToken[token.toLowerCase()] = feedId;
+      feedIds.add(Number(feedId));
+    }
+  }
+
+  const cexClient = createCexWsClient({ urls: env.ryzePricingWsUrls, symbols: config.oracle.cexAssets });
+  const pythClient = createPythLazerWsClient({
+    feedIds: [...feedIds],
+    accessToken: env.pythAccessToken,
+    ...(env.pythStreamUrls ? { endpoints: env.pythStreamUrls } : {}),
+    stalenessMs: config.caps.payloadMaxAgeMs,
+  });
+  // Open both streams so their hot caches fill before the first quote.
+  cexClient.start();
+  pythClient.start();
+
+  return createRyzeSignedPriceSource({ cexClient, pythClient, feedIdByToken });
+}
+
 /** Run the M2 dry-run loop: quote live orders and log would-be spread. Sends no transactions. */
 export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Promise<void> {
   const f = createFiller(opts);
@@ -49,6 +83,7 @@ export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Pr
     try {
       await runDryRunPass({
         chainId: f.config.chainId,
+        weth: f.config.addresses.weth,
         ingestor: f.ingestor,
         payloads: f.payloads,
         quoter: f.quoter,
@@ -65,6 +100,8 @@ export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Pr
 export async function runShadow(opts: FillerOptions = {}, intervalMs = 1000): Promise<void> {
   const f = createFiller(opts);
   console.log(`filler SHADOW on ${f.config.chainName} (chainId ${f.config.chainId}) — no txs will be sent`);
+  // Exposure rail persists across passes so cumulative would-be commitment per token is bounded.
+  const exposure = createExposureTracker(BigInt(f.config.caps.maxOpenExposureUsdWadPerToken));
   for (;;) {
     try {
       await runShadowPass({
@@ -76,6 +113,7 @@ export async function runShadow(opts: FillerOptions = {}, intervalMs = 1000): Pr
         submitter: f.submitter,
         tokenMeta: f.tokenMeta,
         metrics: f.metrics,
+        exposure,
       });
     } catch (err) {
       console.error(`shadow pass failed: ${(err as Error).message}`);

@@ -11,6 +11,7 @@ const config = loadConfig("base");
 const WETH = config.addresses.weth;
 const USDC: Address = "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA";
 
+const BASE_OUT = 1_000_000_000_000_000_000n; // 1 WETH baseline owed
 const parsed: ParsedOrder = {
   orderHash: "0xorderhash0000",
   encodedOrder: "0xabcd",
@@ -19,10 +20,18 @@ const parsed: ParsedOrder = {
   tokenIn: USDC,
   amountIn: 1_000_000_000n,
   inputMpsPerWei: 0n,
+  outputs: [
+    {
+      token: WETH,
+      settlementToken: WETH,
+      amount: BASE_OUT,
+      mpsPerWei: 1n,
+      recipient: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+  ],
   tokenOut: WETH,
-  baselineAmountOut: 1_000_000_000_000_000_000n, // 1 WETH
-  outputMpsPerWei: 1n,
-  outputRecipient: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  hasNativeOutput: false,
+  multiToken: false,
   baselinePriorityFeeWei: 0n,
   auctionTargetBlock: 0,
   deadline: 0,
@@ -87,7 +96,7 @@ test("shadow pass quotes, bids, and builds (never sends) a fill for a profitable
   // Built exactly one fill, in shadow mode (send falsey), with minAmountOut == what we owe the swapper.
   assert.equal(submitted.length, 1);
   assert.ok(!sendFlag);
-  assert.ok(submitted[0]!.minAmountOut > parsed.baselineAmountOut);
+  assert.ok(submitted[0]!.minAmountOut > BASE_OUT);
   assert.equal(submitted[0]!.bidWei, results[0]!.bidWei);
 });
 
@@ -98,7 +107,7 @@ test("shadow pass skips an unprofitable (no-spread) order without building a tx"
     provider,
     ingestor: { async poll() { return [{ orderHash: "0xno", encodedOrder: "0x", signature: "0x" }]; } },
     payloads: { async getPayloads() { return bundle; }, stats() { return { hits: 0, misses: 1, lastFetchAgeMs: 0 }; } },
-    quoter: { async quoteExactIn() { return { ...quote, netAmountOut: parsed.baselineAmountOut }; } },
+    quoter: { async quoteExactIn() { return { ...quote, netAmountOut: BASE_OUT }; } },
     submitter: {
       async submit() {
         built++;

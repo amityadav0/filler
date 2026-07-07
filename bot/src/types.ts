@@ -46,6 +46,22 @@ export interface RyzeQuote {
   wbrCredit?: bigint;
 }
 
+/** A single resolved-baseline output leg of a Priority Order. */
+export interface ParsedOutput {
+  /** Raw order output token; `address(0)` is the UniswapX native-ETH sentinel. */
+  token: Address;
+  /**
+   * Token the Ryze swap must actually deliver to source this leg: WETH for native-ETH outputs
+   * (the executor unwraps and forwards ETH), otherwise identical to `token`.
+   */
+  settlementToken: Address;
+  /** Baseline output amount (at effective priority fee 0). */
+  amount: bigint;
+  /** Per-wei output scaling factor for this leg (scales the amount UP with the effective priority fee). */
+  mpsPerWei: bigint;
+  recipient: Address;
+}
+
 /** A Priority Order decoded to the fields the quoter + strategy need (all amounts as native bigint). */
 export interface ParsedOrder {
   orderHash: string;
@@ -55,12 +71,16 @@ export interface ParsedOrder {
   /** Input the filler receives (exact-in baseline). */
   tokenIn: Address;
   amountIn: bigint;
+  /** Non-zero for exact-output orders (input scales DOWN with priority fee); unsupported → skipped. */
   inputMpsPerWei: bigint;
-  /** Primary output owed to the swapper. */
+  /** All output legs the fill must cover (main output + any fee outputs). */
+  outputs: ParsedOutput[];
+  /** Single settlement token the whole order sources through Ryze (all legs share it, native normalized to WETH). */
   tokenOut: Address;
-  baselineAmountOut: bigint;
-  outputMpsPerWei: bigint;
-  outputRecipient: Address;
+  /** True if any leg is native-ETH (executor must unwrap WETH → ETH for the reactor). */
+  hasNativeOutput: boolean;
+  /** True if the legs span more than one settlement token (can't be sourced by a single swap → skipped). */
+  multiToken: boolean;
   /** Priority-auction params. */
   baselinePriorityFeeWei: bigint;
   auctionTargetBlock: number;

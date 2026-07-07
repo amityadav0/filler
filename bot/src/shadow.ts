@@ -12,6 +12,7 @@ import type { TokenMeta } from "./chain/tokens.js";
 import type { OpenOrder } from "./ingestor/index.js";
 import { decideBid, type BidContext } from "./strategy/index.js";
 import { usdWad } from "./strategy/economics.js";
+import { createExposureTracker, type ExposureTracker } from "./strategy/risk.js";
 import type { Address, ParsedOrder } from "./types.js";
 import type { FillerConfig } from "./config.js";
 
@@ -24,8 +25,10 @@ export interface ShadowDeps {
   submitter: Submitter;
   tokenMeta: TokenMeta;
   metrics: Metrics;
+  /** Per-token open-exposure rail; persists across passes when supplied (defaults to a disabled tracker). */
+  exposure?: ExposureTracker;
   /** Order decoder; defaults to the SDK-backed parsePriorityOrder (injectable for tests). */
-  parse?: (order: OpenOrder, chainId: number) => ParsedOrder;
+  parse?: (order: OpenOrder, chainId: number, wethAddress: Address) => ParsedOrder;
   log?: (msg: string) => void;
 }
 
@@ -41,7 +44,9 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
   const log = deps.log ?? ((m: string) => console.log(m));
   const parse = deps.parse ?? parsePriorityOrder;
   const { config } = deps;
+  const wethAddr = config.addresses.weth as Address;
   const weth = config.addresses.weth.toLowerCase();
+  const exposure = deps.exposure ?? createExposureTracker(0n);
 
   const block = await deps.provider.getBlock("latest");
   const baseFeeWei = block?.baseFeePerGas ?? 0n;
@@ -53,7 +58,7 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
   for (const order of open) {
     let parsed: ParsedOrder;
     try {
-      parsed = parse(order, config.chainId);
+      parsed = parse(order, config.chainId, wethAddr);
     } catch (err) {
       deps.metrics.inc("orders.parseError");
       log(`skip ${order.orderHash.slice(0, 10)}: parse error: ${(err as Error).message}`);
@@ -106,6 +111,19 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
       }
 
       const d = result.decision;
+
+      // Pyth verification fee to forward with the fill: fee-per-blob × non-empty pyth blobs.
+      const nonEmptyBlobs = payloads.pythUpdateData.filter((b) => b && b !== "0x").length;
+      const pythFeeWei = BigInt(config.oracle.pythVerificationFeeWei) * BigInt(nonEmptyBlobs);
+
+      // Open-exposure rail: cap how much of the settlement token we'd commit at once.
+      if (!exposure.canAdd(parsed.tokenOut, ctx.notionalUsdWad)) {
+        deps.metrics.inc("skip.exposure_over_cap");
+        log(`skip ${order.orderHash.slice(0, 10)}: exposure over cap for ${parsed.tokenOut}`);
+        continue;
+      }
+      exposure.add(parsed.tokenOut, ctx.notionalUsdWad);
+
       // Build (do NOT send) the fill tx to prove the whole path is executable in shadow mode.
       const outcome = await deps.submitter.submit({
         encodedOrder: parsed.encodedOrder,
@@ -115,6 +133,7 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
         deadline: parsed.deadline,
         pythUpdateData: payloads.pythUpdateData,
         cexPriceData: payloads.cexPriceData,
+        pythFeeWei,
         bidWei: d.bidWei,
         baseFeeWei,
         gasLimit: BigInt(config.strategy.gasEstimate),

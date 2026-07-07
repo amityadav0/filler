@@ -18,6 +18,19 @@ export interface FillerConfig {
     ryzeOracle: Address;
     executor: Address;
   };
+  /** PythProOracle CEX tolerances (mirror the on-chain config; used to gate payload freshness/deviation). */
+  oracle: {
+    /** Max allowed price deviation between Pyth-blended and signed CEX price (WAD). */
+    pDeltaWad: string;
+    /** Max allowed CEX timestamp age (ms). */
+    tToleranceMs: number;
+    /** Signed-CEX-price service symbols to subscribe to (e.g. "ETHUSD"). */
+    cexAssets: string[];
+    /** Signed-CEX symbol → token address (so cached prices key by the pool's token addresses). */
+    cexTokenMap: Record<string, string>;
+    /** Pyth Lazer verification fee per update blob (wei). Query pythLazer.verification_fee() live before M4. */
+    pythVerificationFeeWei: string;
+  };
   pools: PoolConfig[];
   caps: {
     maxNotionalUsdWadPerFill: string;

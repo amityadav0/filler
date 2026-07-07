@@ -6,10 +6,12 @@ import type { PayloadService } from "./payloads/index.js";
 import type { Quoter } from "./quoter/index.js";
 import type { Metrics } from "./metrics/index.js";
 import { evaluateFill, type FillEconomics } from "./strategy/index.js";
-import type { ParsedOrder } from "./types.js";
+import type { Address, ParsedOrder } from "./types.js";
 
 export interface DryRunDeps {
   chainId: number;
+  /** WETH address, used to normalize native-ETH output legs to their settlement token. */
+  weth: Address;
   ingestor: Ingestor;
   payloads: PayloadService;
   quoter: Quoter;
@@ -28,7 +30,7 @@ export async function runDryRunPass(deps: DryRunDeps): Promise<FillEconomics[]> 
   for (const order of open) {
     let parsed: ParsedOrder;
     try {
-      parsed = parsePriorityOrder(order, deps.chainId);
+      parsed = parsePriorityOrder(order, deps.chainId, deps.weth);
     } catch (err) {
       deps.metrics.inc("orders.parseError");
       log(`skip ${order.orderHash.slice(0, 10)}: parse error: ${(err as Error).message}`);

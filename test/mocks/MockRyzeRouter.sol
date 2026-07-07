@@ -12,11 +12,15 @@ contract MockRyzeRouter {
     /// @notice Output amount delivered per swap; set by the test to simulate Ryze net-out (incl. spread).
     uint256 public amountOutOverride;
 
+    /// @notice Native value forwarded on the last swap (the Pyth verification fee); asserted by tests.
+    uint256 public lastValue;
+
     function setAmountOut(uint256 amountOut) external {
         amountOutOverride = amountOut;
     }
 
     function swapExactIn(IRyzeRouter.SwapParams calldata params) external payable returns (uint256 amountOut) {
+        lastValue = msg.value;
         IERC20(params.tokenIn).transferFrom(msg.sender, address(this), params.amountIn);
         amountOut = amountOutOverride;
         require(amountOut >= params.minAmountOut, "MockRyzeRouter: slippage");
