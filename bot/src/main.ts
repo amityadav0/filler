@@ -1,5 +1,5 @@
 // Runnable entrypoint. MODE=shadow (default) builds fill txs without sending; MODE=dryrun quotes only.
-// Requires RPC_URL and configured addresses (OQ-1/OQ-4).
+// Requires RPC_URL plus the payload env (PYTH_PRO_ACCESS_TOKEN, RYZE_PRICING_URL) for real prices.
 import { runDryRun, runShadow } from "./index.js";
 
 const mode = process.env.MODE ?? "shadow";

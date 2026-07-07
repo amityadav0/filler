@@ -12,6 +12,8 @@ export interface DryRunDeps {
   chainId: number;
   /** WETH address, used to normalize native-ETH output legs to their settlement token. */
   weth: Address;
+  /** All configured pool assets — payloads are fetched for the full set (one cache key, same as shadow). */
+  assets: Address[];
   ingestor: Ingestor;
   payloads: PayloadService;
   quoter: Quoter;
@@ -38,7 +40,7 @@ export async function runDryRunPass(deps: DryRunDeps): Promise<FillEconomics[]> 
     }
 
     try {
-      const payloads = await deps.payloads.getPayloads([parsed.tokenIn, parsed.tokenOut]);
+      const payloads = await deps.payloads.getPayloads(deps.assets);
       const quote = await deps.quoter.quoteExactIn(parsed.tokenIn, parsed.tokenOut, parsed.amountIn, payloads);
       deps.metrics.inc("orders.quoted");
       if (!quote) {

@@ -54,7 +54,7 @@ test("buildFillTx sets EIP-1559 fields and encodes execute(order, fillData)", ()
   assert.equal((tx.to as string).toLowerCase(), EXECUTOR.toLowerCase());
   assert.equal(tx.type, 2);
   assert.equal(tx.maxPriorityFeePerGas, 500n);
-  assert.equal(tx.maxFeePerGas, 1_500n); // baseFee + bid
+  assert.equal(tx.maxFeePerGas, 2_500n); // 2×baseFee headroom + bid (unused portion refunded under EIP-1559)
   assert.equal(tx.gasLimit, 350_000n);
   assert.equal(tx.chainId, 8453);
   assert.equal(tx.value, 3n); // Pyth verification fee attached

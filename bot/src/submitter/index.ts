@@ -73,7 +73,10 @@ export function buildFillTx(executor: Address, chainId: number, inputs: FillTxIn
     chainId,
     type: 2,
     maxPriorityFeePerGas: inputs.bidWei,
-    maxFeePerGas: inputs.baseFeeWei + inputs.bidWei,
+    // 2× baseFee headroom: with exactly baseFee + bid, any next-block baseFee uptick leaves the tx underpriced
+    // and the auction is silently missed. EIP-1559 refunds the unused portion, and the reactor derives the owed
+    // output from the EFFECTIVE tip (gasprice − basefee ≤ bid), so headroom never costs spread.
+    maxFeePerGas: inputs.baseFeeWei * 2n + inputs.bidWei,
     gasLimit: inputs.gasLimit,
   };
 }

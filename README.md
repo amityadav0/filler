@@ -54,13 +54,13 @@ Configure addresses/pools/feeds/caps in `bot/config/base.json`. See [bot/README.
 |---|---|
 | M0 scaffolding | ✅ |
 | M1 executor + tests | ✅ |
-| M2 quoter + payload-service | ✅ (Base config wired; payload source scaffolded, OQ-1 wire-format reconcile remaining) |
-| M3 strategy + submitter (shadow) | ✅ (bid + build fill tx, never sent; `MODE=shadow npm run shadow`) |
-| M4 live, capped | ⬜ (deploy executor + owner sign-off required — see [RUNBOOK.md](./RUNBOOK.md)) |
-| M5 hardening | ⬜ |
+| M2 quoter + payload-service | ✅ (live feeds wired: Pyth Lazer + both signed-CEX hosts) |
+| M3 strategy + submitter (shadow) | ✅ (`MODE=shadow npm run shadow`) |
+| **Mainnet-fork fill gate** | ✅ **PASSED 2026-07-07** (`npm run fork-fill` — real fill, nothing mocked; RUNBOOK §4b) |
+| M4 live, capped | ⬜ owner ops only: deploy executor + router whitelist (`pauseDirectSwap` is ON) — see [RUNBOOK.md](./RUNBOOK.md) |
+| M5 hardening | ⬜ backlog in [FOLLOWUP.md](./FOLLOWUP.md) |
 
-Deploy + go-live steps: **[RUNBOOK.md](./RUNBOOK.md)**. OQ-4 (Base deployment / pairs) is resolved — Ryze is live
-on Base (WETH-USDC, WBTC-USDC) and `bot/config/base.json` is populated.
+Deploy + go-live steps: **[RUNBOOK.md](./RUNBOOK.md)** · next steps + backlog: **[FOLLOWUP.md](./FOLLOWUP.md)**.
 
 ## Key references
 

@@ -28,7 +28,7 @@ export interface FillerConfig {
     cexAssets: string[];
     /** Signed-CEX symbol → token address (so cached prices key by the pool's token addresses). */
     cexTokenMap: Record<string, string>;
-    /** Pyth Lazer verification fee per update blob (wei). Query pythLazer.verification_fee() live before M4. */
+    /** Pyth Lazer verification fee per non-empty update blob (wei). Fork-verified = 1 wei on Base. */
     pythVerificationFeeWei: string;
   };
   pools: PoolConfig[];
@@ -63,4 +63,12 @@ export interface PoolConfig {
 export function loadConfig(network = "base"): FillerConfig {
   const path = join(here, "..", "config", `${network}.json`);
   return JSON.parse(readFileSync(path, "utf8")) as FillerConfig;
+}
+
+/**
+ * All configured pool assets, deduped. Every payload fetch must cover this FULL set — the Lazer blob bundles all
+ * subscribed feeds and `PythProOracle._parseAndStore` reverts for any fresh feed lacking a signed CEX price.
+ */
+export function allPoolAssets(config: FillerConfig): Address[] {
+  return [...new Set(config.pools.flatMap((p) => p.tokens.map((t) => t.toLowerCase())))].map((t) => t as Address);
 }

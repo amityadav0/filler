@@ -1,8 +1,10 @@
 # Ryze UniswapX Filler — Architecture & Implementation Plan
 
-> **Status:** M0–M3 implemented. On-chain executor + tests (M1); bot quoter/strategy/submitter run in **shadow
-> mode** (M3). Base deployment wired into `bot/config/base.json` (OQ-4 resolved). Remaining before M4: reconcile
-> the payload client wire-format (OQ-1), deploy the executor, owner sign-off. Deploy/go-live: `RUNBOOK.md`. See §7.
+> **Status:** M0–M3 implemented and the **mainnet-fork fill gate is PASSED** (2026-07-07, RUNBOOK §4b): a real
+> fill executed end-to-end on a Base fork — real reactor/router/oracle/pool, live signed payloads, exact MPS
+> settlement. OQ-1/OQ-2/OQ-4 resolved. Remaining before M4 is owner ops only: deploy the executor, whitelist it
+> on the router (`pauseDirectSwap` is ON), shadow-run, sign-off. Deploy/go-live: `RUNBOOK.md`; next steps:
+> `FOLLOWUP.md`. See §7.
 > **Owner:** Amit. This doc is the handoff spec — any agent picking up a milestone should read this file, then `/CLAUDE.md` (system guide), then the referenced source files.
 
 ---
@@ -110,7 +112,9 @@ Modules (keep them separate files/services — the quoter and payload-service ge
 
 The whole filler lives or dies on payload freshness: the quote is only executable while the Pyth Lazer payload and CEX signatures the tx carries pass `PythProOracle` verification (tolerance/staleness checks — see `src/oracle/PythProOracle.sol`). Rules:
 - Fetch payloads **immediately before send**, not at quote time; re-quote if price moved > threshold.
-- If the signed-CEX feed is operated by us (check oracle config for the authorized CEX signer), the bot needs access to that signing service or its output stream — **open question OQ-1 below.**
+- The signed-CEX feed is split across two hosts (USDC vs ETH/BTC) — subscribe to both (**OQ-1, resolved**; see §8).
+  Every fetch must cover ALL configured pool assets, not just the fill pair: the oracle requires a signed CEX
+  price for every fresh feed in the Lazer blob (`allPoolAssets` in `bot/src/config.ts`).
 - Store per-asset feed IDs/config in one place: `bot/config/base.json` (pools, assets, feed IDs, reactor + router + executor addresses, band limits).
 
 ---
@@ -151,9 +155,15 @@ Rule for agents: milestones are sequential; do not start M4 without explicit own
   whitelisting (`setWhitelistedIntentSwapper`, authority = Ryze pool owner `0x0A2C…`) is a **hard M4
   dependency** — no fill can execute without it. The `bot/src/forkFill.ts` mainnet-fork harness proved the full
   fill end-to-end (real reactor/router/oracle/pool, live payloads, exact MPS settlement; RUNBOOK §4b).
-- **OQ-3:** `intentFee` lane vs direct swap — direct `swapExactIn` avoids the intent fee; confirm no plan to restrict direct swaps to the intent lane.
+- **OQ-3 (non-blocking):** `intentFee` lane vs direct swap — direct `swapExactIn` avoids the intent fee, and the
+  fork fill executed via direct swap with the executor whitelisted. Confirm with the Ryze team there is no plan to
+  force fillers onto the intent lane (which would add the intent fee to our cost).
 - **OQ-4 (resolved):** Ryze is live on Base — first pairs are **WETH-USDC** and **WBTC-USDC** (addresses in `bot/config/base.json`). Confirm typical order flow/sizes against these during M3 shadow.
-- **OQ-5:** Ryze quotes vs order sizes — verify typical UniswapX Base order notionals sit inside band-1 external liquidity ratios; otherwise quoting degrades exactly where flow is. (Per-pool `bandLimits.maxNotionalUsdWad` set to a 25k placeholder — tune from shadow data.)
+- **OQ-5 (largely resolved by mainnet data, 2026-07-07):** last-30d addressable fills (ETH/WETH/USDC/cbBTC pairs):
+  ~10/day, median $2.0k, p75 $5.0k, p90 $10.4k, ≈$1.7M/month — comfortably inside the 25k band cap and the
+  10k per-fill cap. Live Ryze all-in cost at those sizes: 5–12.5 bps off CEX mid. Auction competition is real:
+  median winner paid the swapper ~257 bps above baseline; ~10% of fills settle uncontested at baseline.
+  Confirm with shadow data before raising caps.
 
 ## 9. Repo layout
 

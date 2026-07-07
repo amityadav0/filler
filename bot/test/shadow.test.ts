@@ -104,6 +104,30 @@ test("shadow pass quotes, bids, and builds (never sends) a fill for a profitable
   assert.equal(submitted[0]!.pythFeeWei, BigInt(config.oracle.pythVerificationFeeWei) * BigInt(nonEmptyBlobs));
 });
 
+test("shadow pass releases exposure for unsent (shadow) fills — no ratchet across passes", async () => {
+  const { createExposureTracker } = await import("../src/strategy/risk.js");
+  const exposure = createExposureTracker(2_000_000_000_000_000_000_000n); // $2k cap (order notional ≈ $1k)
+  const deps = {
+    config,
+    provider,
+    ingestor: { async poll() { return [{ orderHash: parsed.orderHash, encodedOrder: "0xabcd" as const, signature: "0xsig" as const }]; } },
+    payloads: { async getPayloads() { return bundle; }, stats() { return { hits: 0, misses: 1, lastFetchAgeMs: 0 }; } },
+    quoter: { async quoteExactIn() { return quote; } },
+    submitter: { async submit() { return { tx: {}, sent: false }; } },
+    tokenMeta: { async decimalsOf(t: string) { return t.toLowerCase() === USDC.toLowerCase() ? 6 : 18; } },
+    metrics: createMetrics(),
+    exposure,
+    parse: () => ({ ...parsed, orderHash: `0x${Math.random().toString(16).slice(2)}` }),
+    log: () => {},
+  };
+  // Several passes, each building one ~$1k fill: without the release, pass 3+ would skip exposure_over_cap.
+  for (let i = 0; i < 5; i++) {
+    const results = await runShadowPass(deps as never);
+    assert.equal(results.length, 1, `pass ${i} must still bid`);
+  }
+  assert.equal(exposure.current(WETH), 0n, "exposure fully released after shadow passes");
+});
+
 test("shadow pass skips an unprofitable (no-spread) order without building a tx", async () => {
   let built = 0;
   const results = await runShadowPass({

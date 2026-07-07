@@ -14,7 +14,7 @@ import { decideBid, type BidContext } from "./strategy/index.js";
 import { usdWad } from "./strategy/economics.js";
 import { createExposureTracker, type ExposureTracker } from "./strategy/risk.js";
 import type { Address, ParsedOrder } from "./types.js";
-import type { FillerConfig } from "./config.js";
+import { allPoolAssets, type FillerConfig } from "./config.js";
 
 export interface ShadowDeps {
   config: FillerConfig;
@@ -52,9 +52,7 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
   // all subscribed feeds, and PythProOracle._parseAndStore reverts (PriceOracle_InvalidCexPrice) for any fresh
   // feed lacking a matching signed CEX price. Same reason the limit-order-bot sends ALL cached prices
   // (GetAllPriceForAmm). This also guarantees the WETH price is present for USD gas costing.
-  const allAssets: Address[] = [
-    ...new Set(config.pools.flatMap((p) => p.tokens.map((t) => t.toLowerCase()))),
-  ].map((t) => t as Address);
+  const allAssets = allPoolAssets(config);
 
   const block = await deps.provider.getBlock("latest");
   const baseFeeWei = block?.baseFeePerGas ?? 0n;
@@ -128,7 +126,8 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
       const nonEmptyBlobs = payloads.pythUpdateData.filter((b) => b && b !== "0x").length;
       const pythFeeWei = BigInt(config.oracle.pythVerificationFeeWei) * BigInt(nonEmptyBlobs);
 
-      // Open-exposure rail: cap how much of the settlement token we'd commit at once.
+      // Open-exposure rail: cap how much of the settlement token we'd commit at once. Exposure is held only
+      // while a fill is actually in flight — see the release below for the shadow (not-sent) case.
       if (!exposure.canAdd(parsed.tokenOut, ctx.notionalUsdWad)) {
         deps.metrics.inc("skip.exposure_over_cap");
         log(`skip ${order.orderHash.slice(0, 10)}: exposure over cap for ${parsed.tokenOut}`);
@@ -150,6 +149,11 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
         baseFeeWei,
         gasLimit: BigInt(config.strategy.gasEstimate),
       });
+
+      // Nothing was sent (shadow), so nothing is actually committed — release immediately. Without this the
+      // tracker only ever ratchets up and a long shadow run degenerates into all-skip `exposure_over_cap`.
+      // The live path (sent=true, M4) must instead hold until the fill settles/reverts.
+      if (!outcome.sent) exposure.release(parsed.tokenOut, ctx.notionalUsdWad);
 
       deps.metrics.inc("orders.bid");
       if (d.expectedProfitUsdWad > 0n) deps.metrics.inc("orders.profitable");

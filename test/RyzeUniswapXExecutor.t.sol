@@ -132,6 +132,25 @@ contract RyzeUniswapXExecutorTest is Test {
         executor.execute(_order(address(weth)), _fillData());
     }
 
+    function test_reactorCallback_revertsOnBatch() public {
+        // The callback sources output for orders[0] only; a batch would under-source. Must revert.
+        ResolvedOrder[] memory resolved = new ResolvedOrder[](2);
+        OutputToken[] memory outputs = new OutputToken[](1);
+        outputs[0] = OutputToken({token: address(weth), amount: ORDER_OUT, recipient: swapper});
+        for (uint256 i = 0; i < 2; i++) {
+            resolved[i] = ResolvedOrder({
+                info: OrderInfo(address(reactor), swapper, i, block.timestamp, address(0), ""),
+                input: InputToken(IERC20(address(usdc)), AMOUNT_IN, AMOUNT_IN),
+                outputs: outputs,
+                sig: "",
+                hash: bytes32(0)
+            });
+        }
+        vm.prank(address(reactor));
+        vm.expectRevert(RyzeUniswapXExecutor.SingleOrderOnly.selector);
+        executor.reactorCallback(resolved, _fillData());
+    }
+
     function test_reactorCallback_revertsForNonReactor() public {
         ResolvedOrder[] memory resolved = new ResolvedOrder[](1);
         OutputToken[] memory outputs = new OutputToken[](1);

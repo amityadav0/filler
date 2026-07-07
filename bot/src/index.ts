@@ -1,7 +1,7 @@
 // Filler entrypoint. Assembles the modules and runs either the M2 dry-run (quote only) or the M3 shadow loop
 // (quote → bid → build fill tx, never sent).
 import { JsonRpcProvider } from "ethers";
-import { loadConfig, type FillerConfig } from "./config.js";
+import { loadConfig, allPoolAssets, type FillerConfig } from "./config.js";
 import { createIngestor } from "./ingestor/index.js";
 import { createPayloadService, createUnconfiguredSource, type PayloadSource } from "./payloads/index.js";
 import {
@@ -21,7 +21,7 @@ import { runShadowPass } from "./shadow.js";
 export interface FillerOptions {
   network?: string;
   rpcUrl?: string;
-  /** Real Pyth Lazer + signed-CEX source; defaults to the unconfigured stub (OQ-1). */
+  /** Real Pyth Lazer + signed-CEX source; defaults to env-driven wiring (or a throwing stub without env). */
   payloadSource?: PayloadSource;
 }
 
@@ -84,6 +84,7 @@ export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Pr
       await runDryRunPass({
         chainId: f.config.chainId,
         weth: f.config.addresses.weth,
+        assets: allPoolAssets(f.config),
         ingestor: f.ingestor,
         payloads: f.payloads,
         quoter: f.quoter,

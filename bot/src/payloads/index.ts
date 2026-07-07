@@ -19,8 +19,8 @@ export interface PayloadStats {
 }
 
 /**
- * Source of raw payloads — the real Pyth Lazer + signed-CEX client. Pluggable so the cache/freshness logic is
- * testable in isolation and the CoW engine can reuse it. See OQ-1 (who signs `cexPriceData` in production).
+ * Source of raw payloads — the real Pyth Lazer + signed-CEX client (`source.ts`). Pluggable so the
+ * cache/freshness logic is testable in isolation and the CoW engine can reuse it.
  */
 export interface PayloadSource {
   fetch(assets: Address[]): Promise<PayloadBundle>;
@@ -75,13 +75,13 @@ export function createPayloadService(opts: PayloadServiceOptions): PayloadServic
 }
 
 /**
- * Placeholder source until the production feed pipeline is wired (OQ-1). Real implementation: subscribe to Pyth
- * Lazer, hold the latest signed-CEX prices, and assemble `{pythUpdateData, cexPriceData, prices}` per asset.
+ * Fallback when the payload env (PYTH_PRO_ACCESS_TOKEN / RYZE_PRICING_URL) is absent: throws on use so nothing
+ * ever runs on fabricated prices. The real source lives in `source.ts` (see `defaultPayloadSource`).
  */
 export function createUnconfiguredSource(): PayloadSource {
   return {
     async fetch(): Promise<PayloadBundle> {
-      throw new Error("payload source not configured — wire the Pyth Lazer + signed-CEX client (OQ-1)");
+      throw new Error("payload source not configured — set PYTH_PRO_ACCESS_TOKEN and RYZE_PRICING_URL");
     },
   };
 }

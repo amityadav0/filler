@@ -71,7 +71,7 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
 
     error NotOperator();
     error NotReactor();
-    error EmptyOrders();
+    error SingleOrderOnly();
     error EmptyPath();
     error NativeTransferFailed();
 
@@ -116,7 +116,10 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
         external
         onlyReactor
     {
-        if (resolvedOrders.length == 0) revert EmptyOrders();
+        // Exactly one order: the swap below sources output for resolvedOrders[0] only, while _settleOutputs
+        // settles every order — a batch callback would under-source. {execute} only ever routes single orders,
+        // but enforce it here so a future batch entrypoint cannot silently break settlement.
+        if (resolvedOrders.length != 1) revert SingleOrderOnly();
         ResolvedOrder calldata order = resolvedOrders[0];
 
         FillData memory fillData = abi.decode(callbackData, (FillData));
