@@ -66,7 +66,12 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
     }
 
     try {
-      const payloads = await deps.payloads.getPayloads([parsed.tokenIn, parsed.tokenOut]);
+      // Always include the native (WETH) asset so gas can be costed in USD even when neither pair token is WETH
+      // (e.g. WBTC->USDC). The extra signed price simply rides along in cexPriceData — the same "send all prices"
+      // shape the limit-order-bot reference uses (GetAllPriceForAmm).
+      const assets: Address[] = [parsed.tokenIn, parsed.tokenOut];
+      if (!assets.some((a) => a.toLowerCase() === weth)) assets.push(wethAddr);
+      const payloads = await deps.payloads.getPayloads(assets);
       const quote = await deps.quoter.quoteExactIn(parsed.tokenIn, parsed.tokenOut, parsed.amountIn, payloads);
       deps.metrics.inc("orders.quoted");
       if (!quote) {
@@ -112,9 +117,10 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
 
       const d = result.decision;
 
-      // Pyth verification fee to forward with the fill: fee-per-blob × non-empty pyth blobs.
-      const nonEmptyBlobs = payloads.pythUpdateData.filter((b) => b && b !== "0x").length;
-      const pythFeeWei = BigInt(config.oracle.pythVerificationFeeWei) * BigInt(nonEmptyBlobs);
+      // Pyth verification fee to forward with the fill: fee-per-feed × feeds in the update blob. Lazer bundles
+      // every subscribed feed into ONE blob and the oracle bills per feed, so this is NOT the array length (which
+      // is always 1). Mirrors limit-order-bot: `pythUpdateFeePerToken × GetTotalTokens()`.
+      const pythFeeWei = BigInt(config.oracle.pythVerificationFeeWei) * BigInt(payloads.pythFeedCount);
 
       // Open-exposure rail: cap how much of the settlement token we'd commit at once.
       if (!exposure.canAdd(parsed.tokenOut, ctx.notionalUsdWad)) {

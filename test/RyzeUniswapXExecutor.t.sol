@@ -64,6 +64,10 @@ contract RyzeUniswapXExecutorTest is Test {
     // --- helpers -------------------------------------------------------------
 
     function _fillData() internal view returns (bytes memory) {
+        return _fillData(0);
+    }
+
+    function _fillData(uint256 pythFeeWei) internal view returns (bytes memory) {
         IRyzeRouter.Hop[] memory path = new IRyzeRouter.Hop[](1);
         path[0] = IRyzeRouter.Hop({pool: pool, tokenIn: address(usdc), tokenOut: address(weth)});
         RyzeUniswapXExecutor.FillData memory fd = RyzeUniswapXExecutor.FillData({
@@ -71,7 +75,8 @@ contract RyzeUniswapXExecutorTest is Test {
             minAmountOut: ORDER_OUT,
             deadline: block.timestamp + 1,
             pythUpdateData: new bytes[](0),
-            cexPriceData: new IRyzeRouter.CexPriceData[](0)
+            cexPriceData: new IRyzeRouter.CexPriceData[](0),
+            pythFeeWei: pythFeeWei
         });
         return abi.encode(fd);
     }
@@ -97,6 +102,16 @@ contract RyzeUniswapXExecutorTest is Test {
         assertEq(usdc.balanceOf(address(router)), AMOUNT_IN, "router received input");
         // No lingering allowance after the reactor pulled the output.
         assertEq(weth.allowance(address(executor), address(reactor)), 0, "output allowance consumed");
+    }
+
+    function test_Fill_forwardsPythFeeToRouter() public {
+        uint256 fee = 0.001 ether;
+        vm.deal(operator, fee);
+        vm.prank(operator);
+        executor.execute{value: fee}(_order(address(weth)), _fillData(fee));
+
+        assertEq(router.lastValue(), fee, "router received the pyth verification fee");
+        assertEq(address(executor).balance, 0, "no native left in executor");
     }
 
     function test_Fill_NativeOutput_swapperPaidEth_executorKeepsWethSpread() public {
