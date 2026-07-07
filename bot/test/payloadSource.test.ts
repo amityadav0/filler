@@ -5,6 +5,7 @@ import {
   parseCexMessage,
   buildCexSubscribe,
   buildLazerSubscribe,
+  isCexControlFrame,
   decodeEvmData,
   parseLazerUpdate,
 } from "../src/payloads/source.js";
@@ -74,6 +75,15 @@ test("parseCexMessage maps the signed-CEX wire shape and 0x-pads r/s", () => {
   assert.equal(p.r, "0xaa");
   assert.equal(p.s, "0xbb");
   assert.throws(() => parseCexMessage({ symbol: "X" }), /malformed/);
+});
+
+test("isCexControlFrame skips the on-connect welcome frame but not price frames", () => {
+  // Exact shape both signed-price hosts send on connect (verified live).
+  assert.equal(isCexControlFrame({ client_id: "abc", message: "connected", timestamp: 1, type: "welcome" }), true);
+  assert.equal(
+    isCexControlFrame({ token: WETH, symbol: "ETHUSD", price_in_wad: "1", timestamp: 1, v: 27, r: "0x", s: "0x" }),
+    false,
+  );
 });
 
 test("buildCexSubscribe / buildLazerSubscribe produce the expected frames", () => {

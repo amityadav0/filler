@@ -45,6 +45,16 @@ export function buildCexSubscribe(symbols: string[]): string {
   return JSON.stringify({ action: "subscribe", symbols });
 }
 
+/**
+ * True for the service's non-price control frames (e.g. the on-connect welcome `{type, client_id, message,
+ * timestamp}`), which carry no `token`/`price_in_wad` and must be ignored rather than parsed. Verified live
+ * against both signed-price hosts.
+ */
+export function isCexControlFrame(raw: unknown): boolean {
+  const m = raw as { token?: unknown; price_in_wad?: unknown };
+  return typeof m?.token !== "string" || m?.price_in_wad === undefined;
+}
+
 /** Parse one signed-CEX message into the on-chain `CexPriceData` (throws on a malformed message). */
 export function parseCexMessage(raw: unknown): CexPriceData & { symbol: string } {
   const m = raw as Partial<CexWsMessage>;
@@ -206,6 +216,7 @@ export function createCexWsClient(opts: {
       subscribeFrame: buildCexSubscribe(opts.symbols),
       log: opts.log,
       onMessage: (msg) => {
+        if (isCexControlFrame(msg)) return; // welcome/control frame — no price to cache
         const p = parseCexMessage(msg);
         cache.set(p.token.toLowerCase(), { price: p, at: now() });
       },
