@@ -44,6 +44,7 @@ const bundle: PayloadBundle = {
     { token: USDC, priceWad: 1_000_000_000_000_000_000n },
     { token: WETH, priceWad: 1_000_000_000_000_000_000n },
   ],
+  pythFeedCount: 3,
   fetchedAtMs: 0,
 };
 
@@ -98,6 +99,8 @@ test("shadow pass quotes, bids, and builds (never sends) a fill for a profitable
   assert.ok(!sendFlag);
   assert.ok(submitted[0]!.minAmountOut > BASE_OUT);
   assert.equal(submitted[0]!.bidWei, results[0]!.bidWei);
+  // Pyth fee is billed per feed in the blob (feePerToken × pythFeedCount), not per pythUpdateData element.
+  assert.equal(submitted[0]!.pythFeeWei, BigInt(config.oracle.pythVerificationFeeWei) * BigInt(bundle.pythFeedCount));
 });
 
 test("shadow pass skips an unprofitable (no-spread) order without building a tx", async () => {

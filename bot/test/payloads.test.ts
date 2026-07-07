@@ -14,6 +14,7 @@ function bundle(fetchedAtMs: number): PayloadBundle {
       { token: A, priceWad: 1000n },
       { token: B, priceWad: 2000n },
     ],
+    pythFeedCount: 2,
     fetchedAtMs,
   };
 }

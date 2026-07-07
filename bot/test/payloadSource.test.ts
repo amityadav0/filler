@@ -20,7 +20,7 @@ test("composes pyth + cex feeds into a bundle (cex prices authoritative)", async
     pythClient: {
       async latest(feedIds) {
         assert.deepEqual(feedIds, ["7", "631"]);
-        return { pythUpdateData: ["0xdeadbeef"], prices: [] };
+        return { pythUpdateData: ["0xdeadbeef"], prices: [], feedCount: 2 };
       },
       close() {},
     },
@@ -44,6 +44,7 @@ test("composes pyth + cex feeds into a bundle (cex prices authoritative)", async
   const bundle = await src.fetch([USDC, WETH]);
   assert.equal(bundle.fetchedAtMs, 12345);
   assert.deepEqual(bundle.pythUpdateData, ["0xdeadbeef"]);
+  assert.equal(bundle.pythFeedCount, 2); // drives the per-feed Pyth verification fee
   assert.equal(bundle.cexPriceData.length, 2);
   assert.equal(bundle.prices.find((p) => p.token === WETH)?.priceWad, 3_000_000_000_000_000_000_000n);
 });
@@ -51,7 +52,7 @@ test("composes pyth + cex feeds into a bundle (cex prices authoritative)", async
 test("fetch throws when an asset has no configured feed id", async () => {
   const src = createRyzeSignedPriceSource({
     feedIdByToken: {},
-    pythClient: { async latest() { return { pythUpdateData: [], prices: [] }; }, close() {} },
+    pythClient: { async latest() { return { pythUpdateData: [], prices: [], feedCount: 0 }; }, close() {} },
     cexClient: { async fetchSigned() { return { cex: [], prices: [] }; } },
   });
   await assert.rejects(() => src.fetch([USDC]), /no Pyth Lazer feed id/);
