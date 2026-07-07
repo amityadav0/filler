@@ -117,10 +117,13 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
 
       const d = result.decision;
 
-      // Pyth verification fee to forward with the fill: fee-per-feed × feeds in the update blob. Lazer bundles
-      // every subscribed feed into ONE blob and the oracle bills per feed, so this is NOT the array length (which
-      // is always 1). Mirrors limit-order-bot: `pythUpdateFeePerToken × GetTotalTokens()`.
-      const pythFeeWei = BigInt(config.oracle.pythVerificationFeeWei) * BigInt(payloads.pythFeedCount);
+      // Pyth verification fee to forward with the fill. The router's swapExactIn forwards msg.value to
+      // PythProOracle._updatePriceFeedsArray, which requires `msg.value >= verification_fee() × n` where n =
+      // the number of NON-EMPTY updateData array elements (one verifyUpdate call, one flat fee, per blob — NOT
+      // per feed inside the blob; see ryze-contracts PythProOracle.sol:344-352). We send a single bundled blob,
+      // so n = 1. Excess is not refunded, so do not overpay.
+      const nonEmptyBlobs = payloads.pythUpdateData.filter((b) => b && b !== "0x").length;
+      const pythFeeWei = BigInt(config.oracle.pythVerificationFeeWei) * BigInt(nonEmptyBlobs);
 
       // Open-exposure rail: cap how much of the settlement token we'd commit at once.
       if (!exposure.canAdd(parsed.tokenOut, ctx.notionalUsdWad)) {

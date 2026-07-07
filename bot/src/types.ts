@@ -15,12 +15,6 @@ export interface PayloadBundle {
   /** Signed CEX price data, ABI `IOracle.CexPriceData[]`. */
   cexPriceData: CexPriceData[];
   prices: TokenPrice[];
-  /**
-   * Number of Pyth Lazer price feeds contained in the (single, shared) update blob. The on-chain oracle bills
-   * the verification fee PER FEED in the blob (not per `pythUpdateData` array element), so the fill's Pyth fee is
-   * `pythVerificationFeeWei × pythFeedCount`. Mirrors limit-order-bot's `feePerToken × GetTotalTokens()`.
-   */
-  pythFeedCount: number;
   /** ms since epoch when these payloads were fetched. */
   fetchedAtMs: number;
 }

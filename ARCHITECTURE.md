@@ -142,9 +142,11 @@ Rule for agents: milestones are sequential; do not start M4 without explicit own
 - **OQ-1 (wire format resolved):** Signed CEX prices come from `us1.mainnet.pricing.ryze.pro`; Pyth Lazer via the
   Pro websocket stream (token held out-of-band). Endpoints wired (`bot/src/env.ts` + `payloads/source.ts`) and the
   wire format is reconciled against the `limit-order-bot` Go reference — subscribe frames, signed-CEX message
-  shape, single shared-blob `pythUpdateData`, and the **per-feed** Pyth verification fee
-  (`feePerToken × pythFeedCount`, not per-blob). **Remaining is coverage, not format:** the mainnet signed-CEX
-  feed must stream ETHUSD/BTCUSD (not just USDCUSD) before WETH/WBTC fills can price + sign.
+  shape, single shared-blob `pythUpdateData`. The router's Pyth verification fee is billed **per non-empty
+  update blob** (`verification_fee() × n`, n = non-empty `pythUpdateData` elements; see
+  `PythProOracle._updatePriceFeedsArray`), and we send one bundled blob so `n = 1`. **Coverage is resolved:** the
+  signed-CEX feed is split across two hosts (USDC on `us1.mainnet.pricing.ryze.pro`, ETH+BTC on
+  `us-signed-price-4tyzr.ondigitalocean.app`); subscribe to BOTH (comma-separated `RYZE_PRICING_URL`).
 - **OQ-2:** Is `pauseDirectSwap` expected to be enabled on Base? If yes, executor whitelisting becomes a hard M4 dependency. (Whitelist authority = Ryze pool owner `0x0A2C…`.)
 - **OQ-3:** `intentFee` lane vs direct swap — direct `swapExactIn` avoids the intent fee; confirm no plan to restrict direct swaps to the intent lane.
 - **OQ-4 (resolved):** Ryze is live on Base — first pairs are **WETH-USDC** and **WBTC-USDC** (addresses in `bot/config/base.json`). Confirm typical order flow/sizes against these during M3 shadow.

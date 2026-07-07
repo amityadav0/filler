@@ -41,12 +41,13 @@ export OPERATOR=<hot submitter address>
 When the payload env vars are present the bot uses the real price source; otherwise it falls back to a stub that
 throws on use (so nothing runs on fabricated prices).
 
-> **OQ-1 (wire format reconciled):** the Pyth Lazer subscribe frame, the signed-CEX message shape, the single
-> shared-blob `pythUpdateData`, and the per-feed Pyth verification fee (`feePerToken × pythFeedCount`) in
-> `bot/src/payloads/source.ts` now match the `limit-order-bot` Go reference
-> (`internal/oracle/{pyth_price,cex_oracle}.go`, `internal/executor/executor_amm.go`). The remaining live
-> dependency is feed **coverage**, not format: mainnet signed-CEX must actually stream ETHUSD/BTCUSD (config lists
-> them) before WETH/WBTC fills can price and sign — until then those fetches throw and the order is skipped.
+> **OQ-1 (wire format reconciled):** the Pyth Lazer subscribe frame, the signed-CEX message shape, and the single
+> shared-blob `pythUpdateData` in `bot/src/payloads/source.ts` match the `limit-order-bot` Go reference
+> (`internal/oracle/{pyth_price,cex_oracle}.go`). The router's Pyth verification fee is billed **per non-empty
+> update blob** — `verification_fee() × n`, n = non-empty `pythUpdateData` elements (`PythProOracle.sol:344-352`,
+> source-verified) — and we send one bundled blob, so `n = 1` and `pythVerificationFeeWei` = the flat
+> `verification_fee()`. **Coverage is resolved:** signed prices stream live for USDC (`us1.mainnet.pricing.ryze.pro`)
+> and ETH+BTC (`us-signed-price-4tyzr.ondigitalocean.app`) — set BOTH in `RYZE_PRICING_URL`.
 
 ## 2. Deploy the executor (owner op — M4 prep)
 

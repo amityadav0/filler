@@ -121,10 +121,10 @@ export interface CexPriceClient {
 
 export interface PythLazerClient {
   /**
-   * Latest shared update blob plus `feedCount` = number of feeds the blob carries (all subscribed feeds; Lazer
-   * bundles them into one blob). The oracle bills the Pyth verification fee per feed, so this drives the fill fee.
+   * Latest shared update blob. Lazer bundles every subscribed feed into ONE blob, so `pythUpdateData` has a
+   * single element — the oracle bills the verification fee per non-empty element, i.e. once for the fill.
    */
-  latest(feedIds: string[]): Promise<{ pythUpdateData: `0x${string}`[]; prices: TokenPrice[]; feedCount: number }>;
+  latest(feedIds: string[]): Promise<{ pythUpdateData: `0x${string}`[]; prices: TokenPrice[] }>;
   close(): void;
 }
 
@@ -285,8 +285,8 @@ export function createPythLazerWsClient(opts: {
     async latest() {
       if (!latestBlob) throw new Error("pyth lazer: no update received yet");
       if (now() - latestBlob.at > staleness) throw new Error("pyth lazer: update stale");
-      // The one blob carries every subscribed feed; the oracle bills the verification fee per feed.
-      return { pythUpdateData: [latestBlob.blob], prices: [], feedCount: opts.feedIds.length };
+      // One blob carries every subscribed feed — a single-element pythUpdateData for the fill.
+      return { pythUpdateData: [latestBlob.blob], prices: [] };
     },
   };
 }
@@ -336,13 +336,7 @@ export function createRyzeSignedPriceSource(opts: RyzeSignedPriceSourceOptions):
         prices.push(p);
       }
 
-      return {
-        pythUpdateData: pyth.pythUpdateData,
-        cexPriceData: cex.cex,
-        prices,
-        pythFeedCount: pyth.feedCount,
-        fetchedAtMs: now(),
-      };
+      return { pythUpdateData: pyth.pythUpdateData, cexPriceData: cex.cex, prices, fetchedAtMs: now() };
     },
   };
 }

@@ -50,10 +50,10 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
     /// @param cexPriceData Signed CEX prices for oracle verification.
     /// @param pythFeeWei Native fee to forward to the router for on-chain Pyth verification: the router forwards
     ///        it to `PythProOracle.updatePriceFeedsArray{value: msg.value}`, which requires
-    ///        `msg.value >= pythLazer.verification_fee() * (price feeds in the update)`. Lazer bundles every
-    ///        subscribed feed into ONE blob, so the count is the number of feeds carried, NOT the length of the
-    ///        `pythUpdateData` array (which is 1). Any excess is NOT refunded, so this must be exact. The executor
-    ///        forwards it from its own ETH balance.
+    ///        `msg.value >= pythLazer.verification_fee() * n`, where `n` is the number of NON-EMPTY
+    ///        `pythUpdateData` array elements (one `verifyUpdate` call, one flat fee, per blob — not per feed
+    ///        inside the blob). The bot sends a single bundled blob (n = 1). Any excess is NOT refunded, so the
+    ///        caller sets this exactly. The executor forwards it from its own ETH balance.
     struct FillData {
         IRyzeRouter.Hop[] path;
         uint256 minAmountOut;
