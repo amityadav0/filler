@@ -46,6 +46,11 @@ contract DeployExecutor is Script {
         require(owner != address(0), "OWNER unset");
         require(operator != address(0), "OPERATOR unset");
 
+        // The address broadcasting the txs (= PRIVATE_KEY's address). Gate the owner-only pre-approvals on THIS,
+        // not `msg.sender`: inside a forge script `msg.sender` is the script's caller (default sender), which is
+        // unaffected by `startBroadcast(pk)` — using it would skip the approvals even when the deployer is owner.
+        address deployer = vm.addr(pk);
+
         vm.startBroadcast(pk);
 
         executor = new RyzeUniswapXExecutor(IReactor(reactor), IRyzeRouter(router), IWETH(weth), owner, operator);
@@ -53,7 +58,7 @@ contract DeployExecutor is Script {
 
         // Pre-approve the router for the input tokens the filler expects to receive (owner-only; deployer must
         // be `owner` for these to succeed — otherwise run approveRouter separately from the owner key).
-        if (msg.sender == owner) {
+        if (deployer == owner) {
             if (vm.envOr("APPROVE_USDC", false)) executor.approveRouter(IERC20(USDC), type(uint256).max);
             if (vm.envOr("APPROVE_WETH", false)) executor.approveRouter(IERC20(weth), type(uint256).max);
             if (vm.envOr("APPROVE_WBTC", false)) executor.approveRouter(IERC20(WBTC), type(uint256).max);
