@@ -1,5 +1,8 @@
 // submitter (M3 shadow / M4 live): encode fillData + build the executor.execute tx.
 // In shadow mode the tx is BUILT and returned but never sent. Live sending is gated behind `send: true` (M4).
+//
+// Dutch_V3 note: `inclusionPriorityFeeWei` is a pure inclusion/gas-race knob — unlike a Priority order it does
+// NOT change what the swapper is owed (the decay curve fixes that). `minAmountOut` is exactly the resolved owed.
 import { AbiCoder, Interface, type TransactionRequest, type Signer } from "ethers";
 import type { Address, CexPriceData, Hop } from "../types.js";
 
@@ -15,24 +18,19 @@ const FILL_DATA_TYPE =
 
 const EXECUTOR_ABI = ["function execute(tuple(bytes order, bytes sig) order, bytes fillData)"];
 
-/** A chosen priority-fee bid for an order. Populated by the strategy. */
-export interface Bid {
-  maxPriorityFeePerGasWei: bigint;
-  expectedProfitOut: bigint;
-}
-
 export interface FillTxInputs {
   encodedOrder: `0x${string}`;
   signature: `0x${string}`;
   path: Hop[];
-  /** Router-side slippage floor (≥ what we owe the swapper). */
+  /** Router-side slippage floor = exactly the resolved owed output. */
   minAmountOut: bigint;
   deadline: number;
   pythUpdateData: `0x${string}`[];
   cexPriceData: CexPriceData[];
   /** Native Pyth verification fee to forward (= pythLazer.verification_fee() × non-empty pyth blobs). Exact. */
   pythFeeWei: bigint;
-  bidWei: bigint;
+  /** Inclusion priority fee (wei) — gas-race knob only; does not affect owed output. */
+  inclusionPriorityFeeWei: bigint;
   baseFeeWei: bigint;
   gasLimit: bigint;
 }
@@ -72,11 +70,11 @@ export function buildFillTx(executor: Address, chainId: number, inputs: FillTxIn
     value: inputs.pythFeeWei,
     chainId,
     type: 2,
-    maxPriorityFeePerGas: inputs.bidWei,
-    // 2× baseFee headroom: with exactly baseFee + bid, any next-block baseFee uptick leaves the tx underpriced
-    // and the auction is silently missed. EIP-1559 refunds the unused portion, and the reactor derives the owed
-    // output from the EFFECTIVE tip (gasprice − basefee ≤ bid), so headroom never costs spread.
-    maxFeePerGas: inputs.baseFeeWei * 2n + inputs.bidWei,
+    maxPriorityFeePerGas: inputs.inclusionPriorityFeeWei,
+    // 2× baseFee headroom: with exactly baseFee + tip, any next-block baseFee uptick leaves the tx underpriced and
+    // the fill is silently missed. EIP-1559 refunds the unused portion. For Dutch_V3 the tip is a pure inclusion
+    // knob (owed output is fixed by the curve), so headroom never costs spread.
+    maxFeePerGas: inputs.baseFeeWei * 2n + inputs.inclusionPriorityFeeWei,
     gasLimit: inputs.gasLimit,
   };
 }

@@ -33,8 +33,8 @@ contract RyzeUniswapXExecutorTest is Test {
     address internal swapper = makeAddr("swapper");
     address internal pool = makeAddr("pool");
 
-    /// @notice PriorityOrderReactor on Base (see ARCHITECTURE.md §2).
-    address internal constant BASE_REACTOR = 0x000000001Ec5656dcdB24D90DFa42742738De729;
+    /// @notice V3DutchOrderReactor on Base (see ARCHITECTURE.md §2).
+    address internal constant BASE_REACTOR = 0x000000008a8330B5d1F43A62Bf4C673A49f27ba0;
 
     uint256 internal constant AMOUNT_IN = 1_000e6; // 1000 USDC
     uint256 internal constant ORDER_OUT = 1e18; // 1 WETH owed to swapper
@@ -196,7 +196,7 @@ contract RyzeUniswapXExecutorTest is Test {
 
     // --- fork guard ----------------------------------------------------------
 
-    /// @notice Confirms the real PriorityOrderReactor is deployed at the documented Base address.
+    /// @notice Confirms the real V3DutchOrderReactor is deployed at the documented Base address.
     /// @dev Skips unless BASE_RPC_URL is set. A full signed-order fork fill (Permit2 EIP-712 order signing +
     ///      Ryze Base deployment) is the follow-up integration test built with the M2 SDK tooling.
     function test_Fork_reactorLiveOnBase() public {

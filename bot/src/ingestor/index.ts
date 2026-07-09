@@ -1,9 +1,14 @@
-// order-ingestor (M2): poll orders API (webhook later); parse Priority orders via the UniswapX SDK.
+// order-ingestor: poll the UniswapX orders API for open **Dutch_V3** orders on Base and decode them via the SDK.
 // The SDK is CommonJS; Node's ESM interop only exposes its classes via the default import, not named exports.
 import sdk from "@uniswap/uniswapx-sdk";
-import type { Address, ParsedOrder, ParsedOutput } from "../types.js";
+import type { Address, DecayCurve, ParsedOrder, ParsedOutput } from "../types.js";
 
-const { CosignedPriorityOrder } = sdk;
+// VERIFIED against the installed @uniswap/uniswapx-sdk@3.0.10: the cosigned Dutch_V3 order class is
+// `CosignedV3DutchOrder` (default export), with `.parse(encoded, chainId)` and `.info` carrying
+// `input: V3DutchInput`, `outputs: V3DutchOutput[]`, and `cosignerData: { decayStartBlock, exclusiveFiller,
+// exclusivityOverrideBps, inputOverride, outputOverrides }`. Each leg's decay is a `{ relativeBlocks: number[],
+// relativeAmounts: bigint[] }` curve. (There is no more `CosignedPriorityOrder` path in this bot.)
+const { CosignedV3DutchOrder } = sdk;
 
 /** UniswapX native-ETH output sentinel. */
 const NATIVE = "0x0000000000000000000000000000000000000000";
@@ -12,7 +17,6 @@ export interface OpenOrder {
   orderHash: string;
   encodedOrder: `0x${string}`;
   signature: `0x${string}`;
-  auctionTargetBlock?: number;
 }
 
 /** Shape of a row in the UniswapX orders API `orders` array (fields we consume). */
@@ -25,7 +29,7 @@ interface OrdersApiRow {
 }
 
 export interface Ingestor {
-  /** Fetch newly-seen open Priority orders (dedupes by orderHash across calls). */
+  /** Fetch newly-seen open Dutch_V3 orders (dedupes by orderHash across calls). */
   poll(): Promise<OpenOrder[]>;
 }
 
@@ -66,30 +70,46 @@ export function createIngestor(opts: IngestorOptions): Ingestor {
   };
 }
 
+const toBig = (n: { toString(): string }) => BigInt(n.toString());
+
+/** A cosigner override of 0 means "no override" — keep the original amount (mirrors SDK `originalIfZero`). */
+function originalIfZero(override: { isZero(): boolean; toString(): string }, original: bigint): bigint {
+  return override.isZero() ? original : toBig(override);
+}
+
+/** Extract a leg's decay curve from the SDK's `{ relativeBlocks, relativeAmounts }` (relativeAmounts already bigint). */
+function toCurve(curve: { relativeBlocks: number[]; relativeAmounts: bigint[] }): DecayCurve {
+  return {
+    relativeBlocks: [...curve.relativeBlocks],
+    relativeAmounts: curve.relativeAmounts.map((a) => BigInt(a.toString())),
+  };
+}
+
 /**
- * Decode an open Priority order (cosigned) into the fields the quoter + strategy need.
+ * Decode an open cosigned Dutch_V3 order into the fields the quoter + strategy need.
  *
- * Covers ALL output legs (main output + any protocol/interface fee output), not just the first: the executor
- * must settle every leg, so the economics must account for every leg. Native-ETH outputs (`address(0)`) are
- * normalized to `wethAddress` as the settlement token (the executor unwraps WETH → ETH for the reactor).
- * `multiToken` is set when the legs span more than one settlement token — such orders can't be sourced by a
- * single Ryze swap and are skipped downstream.
+ * Covers ALL output legs (main output + any protocol/interface fee output), not just the first: the executor must
+ * settle every leg, so the economics must account for every leg. Native-ETH outputs (`address(0)`) are normalized
+ * to `wethAddress` as the settlement token (the executor unwraps WETH → ETH for the reactor). `multiToken` is set
+ * when the legs span more than one settlement token — such orders can't be sourced by a single Ryze swap and are
+ * skipped downstream. Cosigner input/output overrides are folded into the leg start amounts here (exactly as the
+ * on-chain reactor resolves them), so `startAmount` is the effective decay anchor.
  */
-export function parsePriorityOrder(order: OpenOrder, chainId: number, wethAddress: Address): ParsedOrder {
-  const parsed = CosignedPriorityOrder.parse(order.encodedOrder, chainId);
+export function parseDutchV3Order(order: OpenOrder, chainId: number, wethAddress: Address): ParsedOrder {
+  const parsed = CosignedV3DutchOrder.parse(order.encodedOrder, chainId);
   const info = parsed.info;
   if (!info.outputs.length) throw new Error(`order ${order.orderHash} has no outputs`);
-  const toBig = (n: { toString(): string }) => BigInt(n.toString());
   const weth = wethAddress.toLowerCase();
+  const cd = info.cosignerData;
 
-  const outputs: ParsedOutput[] = info.outputs.map((o) => {
+  const outputs: ParsedOutput[] = info.outputs.map((o, idx) => {
     const token = o.token as Address;
     const isNative = token.toLowerCase() === NATIVE;
     return {
       token,
       settlementToken: (isNative ? wethAddress : token) as Address,
-      amount: toBig(o.amount),
-      mpsPerWei: toBig(o.mpsPerPriorityFeeWei),
+      startAmount: originalIfZero(cd.outputOverrides[idx] ?? o.startAmount, toBig(o.startAmount)),
+      curve: toCurve(o.curve),
       recipient: o.recipient as Address,
     };
   });
@@ -97,10 +117,17 @@ export function parsePriorityOrder(order: OpenOrder, chainId: number, wethAddres
   const settlementTokens = new Set(outputs.map((o) => o.settlementToken.toLowerCase()));
   const hasNativeOutput = outputs.some((o) => o.token.toLowerCase() === NATIVE);
   const multiToken = settlementTokens.size > 1;
-  // Quote/source against the (single) settlement token; if multiToken, this is just the first — the order is
-  // skipped by the strategy before the value is used.
+  // Quote/source against the (single) settlement token; if multiToken, this is just the WETH leg (or the first) —
+  // the order is skipped by the strategy before the value is used.
   const tokenOut = (outputs.find((o) => o.settlementToken.toLowerCase() === weth)?.settlementToken ??
     outputs[0]!.settlementToken) as Address;
+
+  // decayEndBlock = decayStartBlock + the furthest relative block across every leg (owed is flat past it).
+  const maxRel = Math.max(
+    0,
+    ...info.input.curve.relativeBlocks,
+    ...info.outputs.flatMap((o) => o.curve.relativeBlocks),
+  );
 
   return {
     orderHash: order.orderHash,
@@ -108,14 +135,21 @@ export function parsePriorityOrder(order: OpenOrder, chainId: number, wethAddres
     signature: order.signature,
     swapper: info.swapper as Address,
     tokenIn: info.input.token as Address,
-    amountIn: toBig(info.input.amount),
-    inputMpsPerWei: toBig(info.input.mpsPerPriorityFeeWei),
+    inputStartAmount: originalIfZero(cd.inputOverride, toBig(info.input.startAmount)),
+    inputCurve: toCurve(info.input.curve),
     outputs,
     tokenOut,
     hasNativeOutput,
     multiToken,
-    baselinePriorityFeeWei: toBig(info.baselinePriorityFeeWei),
-    auctionTargetBlock: info.cosignerData.auctionTargetBlock.toNumber(),
+    decayStartBlock: cd.decayStartBlock,
+    decayEndBlock: cd.decayStartBlock + maxRel,
+    exclusiveFiller: cd.exclusiveFiller as Address,
+    exclusivityOverrideBps: toBigNum(cd.exclusivityOverrideBps),
     deadline: info.deadline,
   };
+}
+
+/** exclusivityOverrideBps arrives as an ethers BigNumber; it is a small integer. */
+function toBigNum(n: { toNumber(): number }): number {
+  return n.toNumber();
 }

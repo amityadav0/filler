@@ -1,8 +1,12 @@
 # Ryze UniswapX Filler
 
-A filler that wins **UniswapX Priority Orders on Base** by sourcing liquidity from **Ryze SmartShield
+A filler that wins **UniswapX Dutch_V3 orders on Base** by sourcing liquidity from **Ryze SmartShield
 pools** — routing external orderflow into Ryze (volume, fees, WBR) while earning filler margin. The on-chain
 executor and quoting layer also serve as the reference integration for third-party solvers routing through Ryze.
+
+> **Migrated from Priority → Dutch_V3 (2026-07-10).** Live data showed the Priority lane on Base is effectively
+> dead (~3/day) while Dutch_V3 carries the flow (~85/day). See **[DUTCH-V3-AUDIT.md](./DUTCH-V3-AUDIT.md)** for
+> the finding, the addressable-flow sizing, and the exclusivity/RFQ caveat that gates live fills.
 
 See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design, economics, and milestone plan.
 
@@ -66,8 +70,8 @@ Deploy + go-live steps: **[RUNBOOK.md](./RUNBOOK.md)** · next steps + backlog: 
 
 | Thing | Where |
 |---|---|
-| Reactor (Base) | `0x000000001Ec5656dcdB24D90DFa42742738De729` |
-| Orders API | `https://api.uniswap.org/v2/orders?orderStatus=open&orderType=Priority&chainId=8453` |
-| SDK | `@uniswap/uniswapx-sdk` ≥ 2.1.0-beta.13 (`CosignedPriorityOrder`) |
+| Reactor (Base) | V3DutchOrderReactor `0x000000008a8330B5d1F43A62Bf4C673A49f27ba0` |
+| Orders API | `https://api.uniswap.org/v2/orders?orderStatus=open&orderType=Dutch_V3&chainId=8453` |
+| SDK | `@uniswap/uniswapx-sdk` 3.0.10 (`CosignedV3DutchOrder`) |
 | Ryze swap entry | ryze-contracts `src/amm/MultiHopRouter.sol` |
 | Ryze quotes | ryze-contracts `src/amm/WeightedPoolQueries.sol#querySwapExactIn` |

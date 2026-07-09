@@ -30,7 +30,7 @@ function inputs(): FillTxInputs {
     pythUpdateData: ["0xabcd"],
     cexPriceData: cex,
     pythFeeWei: 3n,
-    bidWei: 500n,
+    inclusionPriorityFeeWei: 500n,
     baseFeeWei: 1_000n,
     gasLimit: 350_000n,
   };

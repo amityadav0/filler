@@ -8,14 +8,19 @@ without owner sign-off (ARCHITECTURE §7).**
 
 | Role | Address |
 |---|---|
-| PriorityOrderReactor | `0x000000001Ec5656dcdB24D90DFa42742738De729` |
+| **V3DutchOrderReactor** (verified: SDK mapping = docs = live order `reactor` field) | `0x000000008a8330B5d1F43A62Bf4C673A49f27ba0` |
 | MultiHopRouter (`ryzeRouter`) | `0xCA8A097f627ef41Be12EbF7433F5B6b8A114D77b` |
 | WeightedPoolQueries (`ryzeQueries`) | `0x14EB47280E7D34d8d826a431025487dad7648711` |
 | PythProOracle (`ryzeOracle`) | `0x379dDf0B33aEf387426Bb9d30990A6c8CE3479F2` |
 | WETH-USDC pool | `0x22f902cEfcF8b0bEc6489Cb8ac11FdDa9B2aF125` |
-| WBTC-USDC pool | `0x40F3DAaE59BfE03f9Fb019Bb089Bb0C381DE27Cf` |
+| cbBTC-USDC pool | `0x40F3DAaE59BfE03f9Fb019Bb089Bb0C381DE27Cf` |
 | Ryze pool owner (whitelist authority) | `0x0A2C3a5b964658EAC71819778A9429F1dd3071C2` |
-| **Executor (DEPLOYED 2026-07-09)** | `0x7acBe6faEabE85078D558bb6510D07dd4c40399e` (owner/operator `0x69fc31e5…f123E`; USDC/WETH/cbBTC max-approved to router; deploy tx `0xa7869bc3…4959`) |
+| **Executor** | ⚠️ **REDEPLOY REQUIRED for Dutch_V3.** The old executor `0x7acBe6faEabE85078D558bb6510D07dd4c40399e` is IMMUTABLY bound to the retired Priority reactor and cannot fill Dutch_V3. Deploy a fresh one bound to the V3DutchOrderReactor (§2, `REACTOR` now defaults to it), whitelist it on the router, then set `addresses.executor` in `bot/config/base.json`. |
+
+> **Order type migrated Priority → Dutch_V3 (2026-07-10).** The Priority reactor `0x0000…De729` is retired for
+> this bot (Priority flow on Base is ~3 fills/day vs Dutch_V3 ~85/day). See [DUTCH-V3-AUDIT.md](./DUTCH-V3-AUDIT.md).
+> Live fills are gated on RFQ registration (92% of addressable flow is exclusivity-locked to incumbents) — see
+> FOLLOWUP Phase RFQ.
 
 Tokens: USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, WETH `0x4200…0006`,
 WBTC `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf`. Pyth Lazer feed ids: WETH `631`, USDC `7`, WBTC `397`.

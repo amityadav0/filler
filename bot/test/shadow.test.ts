@@ -4,38 +4,14 @@ import type { Provider } from "ethers";
 import { runShadowPass } from "../src/shadow.js";
 import { loadConfig } from "../src/config.js";
 import { createMetrics } from "../src/metrics/index.js";
-import type { Address, ParsedOrder, PayloadBundle, RyzeQuote } from "../src/types.js";
+import type { PayloadBundle, RyzeQuote } from "../src/types.js";
 import type { FillTxInputs } from "../src/submitter/index.js";
+import { dutchOrder, output, WETH, USDC } from "./fixtures.js";
 
 const config = loadConfig("base");
-const WETH = config.addresses.weth;
-const USDC: Address = "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA";
 
-const BASE_OUT = 1_000_000_000_000_000_000n; // 1 WETH baseline owed
-const parsed: ParsedOrder = {
-  orderHash: "0xorderhash0000",
-  encodedOrder: "0xabcd",
-  signature: "0xsig",
-  swapper: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  tokenIn: USDC,
-  amountIn: 1_000_000_000n,
-  inputMpsPerWei: 0n,
-  outputs: [
-    {
-      token: WETH,
-      settlementToken: WETH,
-      amount: BASE_OUT,
-      mpsPerWei: 1n,
-      recipient: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    },
-  ],
-  tokenOut: WETH,
-  hasNativeOutput: false,
-  multiToken: false,
-  baselinePriorityFeeWei: 0n,
-  auctionTargetBlock: 0,
-  deadline: 0,
-};
+const BASE_OUT = 1_000_000_000_000_000_000n; // 1 WETH owed (no decay ⇒ owed == startAmount)
+const parsed = dutchOrder({ outputs: [output({ startAmount: BASE_OUT })] });
 
 const bundle: PayloadBundle = {
   pythUpdateData: ["0xpyth"],
@@ -90,15 +66,15 @@ test("shadow pass quotes, bids, and builds (never sends) a fill for a profitable
   });
 
   assert.equal(results.length, 1);
-  assert.ok(results[0]!.bidWei > 0n);
+  assert.equal(results[0]!.inclusionPriorityFeeWei, BigInt(config.strategy.maxInclusionPriorityFeeWei));
   assert.ok(results[0]!.expectedProfitUsdWad > 0n);
   assert.equal(results[0]!.improving, false);
 
   // Built exactly one fill, in shadow mode (send falsey), with minAmountOut == what we owe the swapper.
   assert.equal(submitted.length, 1);
   assert.ok(!sendFlag);
-  assert.ok(submitted[0]!.minAmountOut > BASE_OUT);
-  assert.equal(submitted[0]!.bidWei, results[0]!.bidWei);
+  assert.equal(submitted[0]!.minAmountOut, BASE_OUT); // Dutch: owed is exactly the (no-decay) startAmount
+  assert.equal(submitted[0]!.inclusionPriorityFeeWei, results[0]!.inclusionPriorityFeeWei);
   // Pyth fee is billed per non-empty update blob (the oracle bills one flat verification_fee per verifyUpdate
   // call). We send a single bundled blob, so the fee is exactly feePerToken × 1.
   const nonEmptyBlobs = bundle.pythUpdateData.filter((b) => b && b !== "0x").length;

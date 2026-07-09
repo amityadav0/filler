@@ -5,24 +5,24 @@
 //   PYTH_PRO_ACCESS_TOKEN=... npm run fork-fill
 //
 // What it exercises — everything a live fill touches, with NOTHING mocked:
-//   real PriorityOrderReactor (Permit2 pull + reactorCallback + _fill), real MultiHopRouter + PythProOracle
+//   real V3DutchOrderReactor (Permit2 pull + reactorCallback + _fill), real MultiHopRouter + PythProOracle
 //   (signature verification of LIVE Pyth Lazer + signed-CEX payloads), real WeightedPool swap, and the bot's own
 //   ingestor-parse → quoter → strategy → submitter pipeline (send = true). The only synthetic ingredient is the
-//   order itself: a self-signed CosignedPriorityOrder (cosigner = 0, so no cosignature is required — reactor
-//   source-verified) selling WETH for USDC from a funded anvil account.
+//   order itself: a self-cosigned CosignedV3DutchOrder selling WETH for USDC from a funded anvil account, with a
+//   real (locally-generated) cosigner + cosignature so the reactor's cosignature check passes.
 //
 // Go/no-go gate: if this fill lands (swapper paid exactly what the order owes, executor keeps the spread), the
-// same bytecode + payload pipeline works on mainnet.
+// same bytecode + payload pipeline works on mainnet for real Dutch_V3 flow.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { Contract, ContractFactory, JsonRpcProvider, Wallet, ZeroAddress } from "ethers";
+import { Contract, ContractFactory, JsonRpcProvider, SigningKey, Wallet, ZeroAddress } from "ethers";
 import sdkPkg from "@uniswap/uniswapx-sdk";
 import { BigNumber } from "@ethersproject/bignumber";
 import { loadConfig } from "./config.js";
-import { parsePriorityOrder } from "./ingestor/index.js";
+import { parseDutchV3Order } from "./ingestor/index.js";
 import { createQuoter } from "./quoter/index.js";
-import { decideBid, type BidContext } from "./strategy/index.js";
+import { decideFill, type FillContext } from "./strategy/index.js";
 import { usdWad } from "./strategy/economics.js";
 import { createSubmitter } from "./submitter/index.js";
 import {
@@ -32,7 +32,7 @@ import {
 } from "./payloads/source.js";
 import type { Address } from "./types.js";
 
-const { PriorityOrderBuilder } = sdkPkg;
+const { V3DutchOrderBuilder } = sdkPkg;
 
 // Default anvil dev accounts (0 = executor owner, 1 = operator/submitter). The swapper is a FRESH random key:
 // the well-known anvil dev addresses have EIP-7702 delegations on real Base mainnet (their keys are public), so
@@ -182,21 +182,56 @@ async function main(): Promise<void> {
   if (!quote) throw new Error("no Ryze path for WETH->USDC");
   log(`ryze quote: 0.5 WETH -> ${quote.netAmountOut} USDC (wbr=${quote.wbrCredit} wbf=${quote.sessionizedWbf})`);
 
-  // --- 6. Build + sign the priority order (baseline = 98% of quote ⇒ 2% raw spread) ---------------------------
-  const startBlock = BigInt(await provider.getBlockNumber());
-  const baselineOut = (quote.netAmountOut * 98n) / 100n;
-  const order = new PriorityOrderBuilder(8453, reactor, permit2)
-    .cosigner(ZeroAddress)
-    .auctionStartBlock(BigNumber.from(startBlock))
-    .baselinePriorityFeeWei(BigNumber.from(0))
-    .cosignerData({ auctionTargetBlock: BigNumber.from(startBlock) })
-    .cosignature("0x")
-    .input({ token: WETH, amount: BigNumber.from(AMOUNT_IN), mpsPerPriorityFeeWei: BigNumber.from(0) })
-    .output({ token: USDC, amount: BigNumber.from(baselineOut), mpsPerPriorityFeeWei: BigNumber.from(1), recipient: swapper.address })
+  // --- 6. Build + cosign the Dutch_V3 order (owed = 98% of quote ⇒ 2% spread) ---------------------------------
+  // decayStartBlock is set 10 blocks ahead and exclusiveFiller is open (address(0)), so at the fill block the
+  // order is BEFORE decay and outside any exclusivity window ⇒ owed == startAmount deterministically (a clean
+  // positive test of parse → resolve → settlement). A fresh cosigner key signs the cosignatureHash so the
+  // reactor's cosignature verification passes.
+  const currentBlock = await provider.getBlockNumber();
+  const decayStartBlock = currentBlock + 10;
+  const fillBlock = currentBlock + 1; // the fill tx mines at ~currentBlock+1 (< decayStartBlock)
+  const owedOut = (quote.netAmountOut * 98n) / 100n;
+  const latestForBaseFee = await provider.getBlock("latest");
+  const startingBaseFee = latestForBaseFee?.baseFeePerGas ?? 0n;
+  const cosigner = Wallet.createRandom();
+
+  const noDecayInput = { relativeBlocks: [], relativeAmounts: [] as bigint[] };
+  // Output decays down by ~2.5% over 4 blocks after decayStart (matches the audit's median curve shape).
+  const outCurve = { relativeBlocks: [4], relativeAmounts: [(owedOut * 250n) / 10000n] };
+  const cosignerData = {
+    decayStartBlock,
+    exclusiveFiller: ZeroAddress,
+    exclusivityOverrideBps: BigNumber.from(0),
+    inputOverride: BigNumber.from(0),
+    outputOverrides: [BigNumber.from(0)],
+  };
+
+  const builder = new V3DutchOrderBuilder(8453, reactor, permit2)
+    .cosigner(cosigner.address)
+    .startingBaseFee(BigNumber.from(startingBaseFee))
+    .input({
+      token: WETH,
+      startAmount: BigNumber.from(AMOUNT_IN),
+      curve: noDecayInput,
+      maxAmount: BigNumber.from(AMOUNT_IN),
+      adjustmentPerGweiBaseFee: BigNumber.from(0),
+    })
+    .output({
+      token: USDC,
+      startAmount: BigNumber.from(owedOut),
+      curve: outCurve,
+      recipient: swapper.address,
+      minAmount: BigNumber.from(owedOut - outCurve.relativeAmounts[0]!),
+      adjustmentPerGweiBaseFee: BigNumber.from(0),
+    })
     .deadline(Math.floor(Date.now() / 1000) + 300)
     .swapper(swapper.address)
-    .nonce(BigNumber.from(Date.now()))
-    .build();
+    .nonce(BigNumber.from(Date.now()));
+
+  // Cosign: hash the unsigned order over the cosignerData, sign the raw digest with the cosigner key.
+  const unsigned = builder.buildPartial();
+  const cosignature = new SigningKey(cosigner.privateKey).sign(unsigned.cosignatureHash(cosignerData)).serialized;
+  const order = builder.cosignerData(cosignerData).cosignature(cosignature).build();
 
   const pd = order.permitData();
   const signature = (await swapper.signTypedData(
@@ -204,34 +239,32 @@ async function main(): Promise<void> {
     pd.types as never,
     normalizeTypedValues(pd.values) as never,
   )) as `0x${string}`;
-  const parsed = parsePriorityOrder(
+  const parsed = parseDutchV3Order(
     { orderHash: order.hash(), encodedOrder: order.serialize() as `0x${string}`, signature },
     8453,
     WETH as Address,
   );
-  log(`order built + permit-signed: baselineOut=${parsed.outputs[0]!.amount} USDC, startBlock=${startBlock}`);
+  log(`order built + cosigned + permit-signed: owedOut=${parsed.outputs[0]!.startAmount} USDC, decayStartBlock=${decayStartBlock}`);
 
-  // --- 7. Strategy: pick the priority-fee bid exactly as the live loop would ----------------------------------
+  // --- 7. Strategy: run the exact fill decision the live loop would, at the fill block ------------------------
   const priceOf = (t: string) => payloads.prices.find((p) => p.token.toLowerCase() === t.toLowerCase())?.priceWad;
   const block = await provider.getBlock("latest");
-  const ctx: BidContext = {
+  const ctx: FillContext = {
+    filler: executor,
     priceOutWad: priceOf(USDC)!,
     decimalsOut: 6,
     nativePriceWad: priceOf(WETH)!,
     gasEstimate: BigInt(config.strategy.gasEstimate),
     baseFeeWei: block?.baseFeePerGas ?? 0n,
-    spreadCaptureBps: config.strategy.spreadCaptureBps,
-    improvingShadeBps: config.strategy.improvingDirectionShadeBps,
-    worseningShadeBps: config.strategy.worseningDirectionShadeBps,
-    maxBidWei: BigInt(config.strategy.maxBidPriorityFeeWei),
+    inclusionPriorityFeeWei: BigInt(config.strategy.maxInclusionPriorityFeeWei),
     minProfitUsdWad: BigInt(config.strategy.minProfitUsdWad),
     maxNotionalUsdWad: BigInt(config.caps.maxNotionalUsdWadPerFill),
     notionalUsdWad: usdWad(AMOUNT_IN, 18, priceOf(WETH)!),
   };
-  const bid = decideBid(parsed, quote, ctx);
-  if (bid.kind === "skip") throw new Error(`strategy skipped: ${bid.reason}`);
-  const d = bid.decision;
-  log(`bid: ${d.bidWei} wei tip, owed=${d.orderOwedOut} USDC, keep=${d.capturedSpreadOut} USDC (~$${Number(d.expectedProfitUsdWad / 10n ** 12n) / 1e6})`);
+  const fill = decideFill(parsed, quote, ctx, fillBlock);
+  if (fill.kind === "skip") throw new Error(`strategy skipped: ${fill.reason}`);
+  const d = fill.decision;
+  log(`fill: tip=${d.inclusionPriorityFeeWei} wei, owed=${d.orderOwedOut} USDC, keep=${d.capturedSpreadOut} USDC (~$${Number(d.expectedProfitUsdWad / 10n ** 12n) / 1e6})`);
 
   // --- 8. Real Pyth verification fee from the forked oracle → exact pythFeeWei --------------------------------
   const oracle = new Contract(ryzeOracle, ORACLE_ABI, provider);
@@ -262,7 +295,7 @@ async function main(): Promise<void> {
       pythUpdateData: payloads.pythUpdateData,
       cexPriceData: payloads.cexPriceData,
       pythFeeWei: verificationFee * BigInt(nonEmptyBlobs),
-      bidWei: d.bidWei,
+      inclusionPriorityFeeWei: d.inclusionPriorityFeeWei,
       baseFeeWei: ctx.baseFeeWei,
       gasLimit: 3_000_000n, // generous for the fork run; the receipt's gasUsed calibrates config.strategy.gasEstimate
     },

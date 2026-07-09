@@ -29,8 +29,9 @@ import {IRyzeRouter} from "../src/interfaces/IRyzeRouter.sol";
 ///      (default to Base mainnet); APPROVE_USDC / APPROVE_WETH / APPROVE_WBTC = true to pre-approve
 ///      those tokens to the router (max allowance; runs only when the deployer is the owner).
 contract DeployExecutor is Script {
-    // Base mainnet defaults.
-    address constant DEFAULT_REACTOR = 0x000000001Ec5656dcdB24D90DFa42742738De729;
+    // Base mainnet defaults. REACTOR = V3DutchOrderReactor (verified 3 ways — see bot/config/base.json
+    // _reactorNote). The old Priority reactor (0x0000…De729) is retired for this bot.
+    address constant DEFAULT_REACTOR = 0x000000008a8330B5d1F43A62Bf4C673A49f27ba0;
     address constant DEFAULT_ROUTER = 0xCA8A097f627ef41Be12EbF7433F5B6b8A114D77b;
     address constant DEFAULT_WETH = 0x4200000000000000000000000000000000000006;
 

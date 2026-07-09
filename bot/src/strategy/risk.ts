@@ -1,7 +1,7 @@
 // Risk rails from ARCHITECTURE §5.2/§6 that gate an order beyond per-fill profit:
 //   - per-token open-exposure cap (bound how much of one token we commit at once), and
-//   - a rolling reverted-gas budget (losing priority-auction bids still cost gas — budget it as customer
-//     acquisition and stop bidding once the hourly spend is exhausted).
+//   - a rolling reverted-gas budget (a lost Dutch fill — someone else filled first — still costs gas; budget it
+//     as customer acquisition and stop sending once the hourly spend is exhausted).
 // Both are pure/injectable-clock so they unit-test without wall-clock or network.
 
 /** Tracks committed notional per settlement token against a per-token cap (USD WAD). */

@@ -1,17 +1,20 @@
-// dry-run (M2): poll live Base orders, quote them through Ryze, and log would-be P&L incl. sessionized fees.
-// Sends NO transactions. This is the M3 shadow loop minus the submitter.
+// dry-run (M2): poll live Base Dutch_V3 orders, quote them through Ryze, and log would-be P&L incl. sessionized
+// fees. Sends NO transactions. This is the M3 shadow loop minus the submitter.
 import type { Ingestor } from "./ingestor/index.js";
-import { parsePriorityOrder } from "./ingestor/index.js";
+import { parseDutchV3Order } from "./ingestor/index.js";
 import type { PayloadService } from "./payloads/index.js";
 import type { Quoter } from "./quoter/index.js";
 import type { Metrics } from "./metrics/index.js";
 import { evaluateFill, type FillEconomics } from "./strategy/index.js";
+import { resolveInputAtBlock } from "./strategy/economics.js";
 import type { Address, ParsedOrder } from "./types.js";
 
 export interface DryRunDeps {
   chainId: number;
   /** WETH address, used to normalize native-ETH output legs to their settlement token. */
   weth: Address;
+  /** Our executor address — decides the exclusivity handicap in the would-be owed. */
+  filler: Address;
   /** All configured pool assets — payloads are fetched for the full set (one cache key, same as shadow). */
   assets: Address[];
   ingestor: Ingestor;
@@ -32,29 +35,33 @@ export async function runDryRunPass(deps: DryRunDeps): Promise<FillEconomics[]> 
   for (const order of open) {
     let parsed: ParsedOrder;
     try {
-      parsed = parsePriorityOrder(order, deps.chainId, deps.weth);
+      parsed = parseDutchV3Order(order, deps.chainId, deps.weth);
     } catch (err) {
       deps.metrics.inc("orders.parseError");
       log(`skip ${order.orderHash.slice(0, 10)}: parse error: ${(err as Error).message}`);
       continue;
     }
 
+    // Would-be fill just after the exclusivity window closes (decayStartBlock + 1): the realistic point at which a
+    // polling filler (never the exclusive one) can win — no exclusivity handicap, decay just begun.
+    const evalBlock = parsed.decayStartBlock + 1;
+    const amountIn = resolveInputAtBlock(parsed, evalBlock);
+
     try {
       const payloads = await deps.payloads.getPayloads(deps.assets);
-      const quote = await deps.quoter.quoteExactIn(parsed.tokenIn, parsed.tokenOut, parsed.amountIn, payloads);
+      const quote = await deps.quoter.quoteExactIn(parsed.tokenIn, parsed.tokenOut, amountIn, payloads);
       deps.metrics.inc("orders.quoted");
       if (!quote) {
         deps.metrics.inc("orders.noPath");
         log(`skip ${order.orderHash.slice(0, 10)}: no Ryze path or missing prices`);
         continue;
       }
-      // At the minimum bid the effective priority fee is 0, so the order owes its baseline output.
-      const econ = evaluateFill(parsed, quote, parsed.baselinePriorityFeeWei);
+      const econ = evaluateFill(parsed, quote, deps.filler, evalBlock);
       results.push(econ);
       if (econ.grossSpreadOut > 0n) deps.metrics.inc("orders.profitable");
       log(
         `quote ${order.orderHash.slice(0, 10)} ${parsed.tokenIn}->${parsed.tokenOut} ` +
-          `in=${parsed.amountIn} ryzeOut=${econ.ryzeNetOut} owed=${econ.orderOwedOut} ` +
+          `in=${amountIn} ryzeOut=${econ.ryzeNetOut} owed=${econ.orderOwedOut} ` +
           `spread=${econ.grossSpreadOut} slip=${econ.sessionizedSlippage} wbf=${econ.sessionizedWbf} wbr=${econ.wbrCredit}`,
       );
     } catch (err) {

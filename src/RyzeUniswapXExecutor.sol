@@ -12,8 +12,13 @@ import {IWETH} from "./interfaces/IWETH.sol";
 import {IRyzeRouter} from "./interfaces/IRyzeRouter.sol";
 
 /// @title RyzeUniswapXExecutor
-/// @notice Fills UniswapX Priority Orders by sourcing liquidity from Ryze SmartShield pools.
-/// @dev The reactor pulls the swapper's input tokens to this contract, then calls {reactorCallback}. During the
+/// @notice Fills UniswapX **Dutch_V3** orders by sourcing liquidity from Ryze SmartShield pools.
+/// @dev Order-type-agnostic on-chain: the reactor resolves the order and this executor only ever sees RESOLVED
+///      input/output amounts, so the same {reactorCallback} works for any UniswapX reactor (`BaseReactor`). Only
+///      the `reactor` immutable differs — this instance is bound to the Base V3DutchOrderReactor
+///      (0x000000008a8330B5d1F43A62Bf4C673A49f27ba0). No Dutch decay logic lives here; the reactor applies the
+///      curve + exclusivity, and this contract sees only the resolved amounts it must source and settle.
+///      The reactor pulls the swapper's input tokens to this contract, then calls {reactorCallback}. During the
 ///      callback this contract swaps the input through the Ryze router (carrying fresh Pyth/CEX price payloads
 ///      supplied off-chain), then makes each resolved output available to the reactor:
 ///      ERC20 outputs are approved to the reactor (it pulls them via `transferFrom` in `_fill`); native-ETH
@@ -24,7 +29,7 @@ import {IRyzeRouter} from "./interfaces/IRyzeRouter.sol";
 contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
     using SafeERC20 for IERC20;
 
-    /// @notice UniswapX reactor this executor fills for (PriorityOrderReactor on Base).
+    /// @notice UniswapX reactor this executor fills for (V3DutchOrderReactor on Base).
     // forge-lint: disable-next-line(screaming-snake-case-immutable)
     IReactor public immutable reactor;
 
@@ -100,7 +105,7 @@ contract RyzeUniswapXExecutor is IReactorCallback, Ownable {
         _;
     }
 
-    /// @notice Submit a fill for a single signed Priority Order.
+    /// @notice Submit a fill for a single signed Dutch_V3 order.
     /// @param order The signed UniswapX order to fill.
     /// @param fillData ABI-encoded {FillData} describing the Ryze swap that sources the output.
     /// @dev Payable so the operator can attach the exact Pyth verification fee for this fill; the executor may

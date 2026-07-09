@@ -1,11 +1,18 @@
-// Pure priority-auction economics. Mirrors UniswapX PriorityFeeLib (source-verified, Uniswap/UniswapX main).
+// Dutch_V3 block-decay economics. Mirrors UniswapX on-chain resolution to the wei so our off-chain `owed` matches
+// what the reactor will require at fill time.
 //
-// A Priority Order carries a baseline (input, outputs) plus `mpsPerPriorityFeeWei` scaling factors. The
-// *effective* priority fee — `tx.gasprice - block.basefee - order.baselinePriorityFeeWei`, floored at 0 — scales
-// the order in the swapper's favour: outputs scale UP (you owe more), input scales DOWN (you receive less).
-// MPS = 1e7 "milli-basis-points" per wei of priority fee.
+// Source-verified against @uniswap/uniswapx-sdk 3.0.10 `NonLinearDutchDecayLib` (dist/.../utils/dutchBlockDecay.js)
+// and Uniswap/UniswapX `src/lib/NonlinearDutchDecayLib.sol` + `V3DutchOrderReactor._resolve` + `ExclusivityLib`:
+//   - decay is piecewise-linear in the curve's (relativeBlock, startAmount - relativeAmount) points, anchored at
+//     `decayStartBlock`, clamped to startAmount before the first point and to the last point after it;
+//   - exclusivity: while `block <= decayStartBlock` a filler that is NOT the `exclusiveFiller` owes outputs scaled
+//     UP by `exclusivityOverrideBps` (rounded up, favouring the swapper); `overrideBps == 0` means STRICT
+//     exclusivity (the reactor reverts for non-exclusive fillers). After `decayStartBlock` anyone may fill with no
+//     handicap. `decayStartBlock` is BOTH the decay anchor and the exclusivity-window end (single field).
 
-export const MPS = 10_000_000n;
+import type { DecayCurve, ParsedOrder } from "../types.js";
+
+export const BPS = 10_000n;
 
 /** ceil(a * b / d) for non-negative bigints. */
 export function mulDivUp(a: bigint, b: bigint, d: bigint): bigint {
@@ -14,116 +21,101 @@ export function mulDivUp(a: bigint, b: bigint, d: bigint): bigint {
   return p === 0n ? 0n : (p - 1n) / d + 1n;
 }
 
-/** floor(a * b / d) for non-negative bigints. */
-export function mulDivDown(a: bigint, b: bigint, d: bigint): bigint {
-  if (d === 0n) throw new Error("mulDivDown: division by zero");
-  return (a * b) / d;
-}
-
 /**
- * Output amount the swapper is owed at a given effective priority fee (rounds up, favours swapper).
- * `scale(output) = output.amount * (MPS + priorityFee * mpsPerWei) / MPS`.
+ * Linear interpolation between two curve points, matching `NonlinearDutchDecayLib.linearDecay` EXACTLY, including
+ * its rounding: the magnitude is floor-divided as a positive quantity and only then signed, so a decreasing
+ * segment rounds toward `startAmount` (never below the true line) the same way the contract does.
  */
-export function scaleOutputUp(baseAmount: bigint, mpsPerWei: bigint, priorityFeeWei: bigint): bigint {
-  if (mpsPerWei === 0n) return baseAmount;
-  return mulDivUp(baseAmount, MPS + priorityFeeWei * mpsPerWei, MPS);
-}
-
-/**
- * Input amount the filler receives at a given effective priority fee (rounds down, favours swapper).
- * `scale(input) = input.amount * (MPS - priorityFee * mpsPerWei) / MPS`, clamped to 0 once the factor ≥ MPS.
- */
-export function scaleInputDown(baseAmount: bigint, mpsPerWei: bigint, priorityFeeWei: bigint): bigint {
-  const factor = priorityFeeWei * mpsPerWei;
-  if (factor >= MPS) return 0n;
-  if (factor === 0n) return baseAmount;
-  return mulDivDown(baseAmount, MPS - factor, MPS);
-}
-
-/** Effective priority fee (wei) an order sees: `bid - baselinePriorityFeeWei`, floored at 0. */
-export function effectivePriorityFee(bidWei: bigint, baselinePriorityFeeWei: bigint): bigint {
-  const d = bidWei - baselinePriorityFeeWei;
-  return d > 0n ? d : 0n;
-}
-
-/** The order's owed output at a bid, given its single scaled output. */
-export function orderOutputAtBid(
-  baseOutput: bigint,
-  mpsPerWei: bigint,
-  bidWei: bigint,
-  baselinePriorityFeeWei: bigint,
+function linearDecay(
+  startPoint: number,
+  endPoint: number,
+  currentPoint: number,
+  startAmount: bigint,
+  endAmount: bigint,
 ): bigint {
-  return scaleOutputUp(baseOutput, mpsPerWei, effectivePriorityFee(bidWei, baselinePriorityFeeWei));
+  if (currentPoint >= endPoint) return endAmount;
+  const elapsed = BigInt(currentPoint - startPoint);
+  const duration = BigInt(endPoint - startPoint);
+  if (endAmount < startAmount) {
+    // Compute the positive decrement with floor division FIRST, then negate (mirrors the contract's
+    // `0 - (startAmount - endAmount) * elapsed / duration`; negating after flooring matters for exactness).
+    const dec = ((startAmount - endAmount) * elapsed) / duration;
+    return startAmount - dec;
+  }
+  const inc = ((endAmount - startAmount) * elapsed) / duration;
+  return startAmount + inc;
 }
 
-/** One output leg for multi-output economics: its baseline amount and per-wei scaling factor. */
-export interface OutputLeg {
-  amount: bigint;
-  mpsPerWei: bigint;
-}
-
-/** Total baseline output across all legs (effective priority fee 0). */
-export function sumBaseOutput(legs: OutputLeg[]): bigint {
-  let s = 0n;
-  for (const l of legs) s += l.amount;
-  return s;
-}
-
-/**
- * Aggregate scaling weight `Σ amount·mpsPerWei` across legs. The extra output owed grows ≈ `weight·effFee/MPS`,
- * so this is the slope used to invert a target extra-output back to an effective priority fee.
- */
-export function outputWeight(legs: OutputLeg[]): bigint {
-  let w = 0n;
-  for (const l of legs) w += l.amount * l.mpsPerWei;
-  return w;
-}
-
-/** Exact total output owed across all legs at an effective priority fee (each leg rounds up, as on-chain). */
-export function totalOwedAtEffFee(legs: OutputLeg[], effFeeWei: bigint): bigint {
-  let s = 0n;
-  for (const l of legs) s += scaleOutputUp(l.amount, l.mpsPerWei, effFeeWei);
-  return s;
+/** Position of the two curve points bracketing `currentRelativeBlock` (mirrors `locateArrayPosition`). */
+function locate(relativeBlocks: number[], current: number): [number, number] {
+  let prev = 0;
+  let next = 0;
+  for (; next < relativeBlocks.length; next++) {
+    if (relativeBlocks[next]! >= current) return [prev, next];
+    prev = next;
+  }
+  return [next - 1, next - 1];
 }
 
 /**
- * Smallest effective priority fee (wei) whose scaled-up outputs give the swapper at least `extraOut` more total
- * output, given the aggregate `weight` = `Σ amount·mpsPerWei`. Inverts {totalOwedAtEffFee}'s linear slope,
- * rounding up so the target is met. Returns 0 if `extraOut <= 0` or `weight == 0`.
+ * Resolve a single decayed amount at `currentBlock` — the exact TypeScript translation of
+ * `NonLinearDutchDecayLib.decay(curve, startAmount, decayStartBlock, currentBlock)`.
  */
-export function effFeeForExtraOutWeighted(weight: bigint, extraOut: bigint): bigint {
-  if (extraOut <= 0n || weight <= 0n) return 0n;
-  return mulDivUp(extraOut, MPS, weight);
+export function decay(curve: DecayCurve, startAmount: bigint, decayStartBlock: number, currentBlock: number): bigint {
+  if (curve.relativeAmounts.length > 16) throw new Error("InvalidDecayCurve");
+  // Before decay begins, or a no-decay curve: hold at startAmount.
+  if (decayStartBlock >= currentBlock || curve.relativeAmounts.length === 0) return startAmount;
+
+  const blockDelta = currentBlock - decayStartBlock;
+  // Segment from the anchor (block 0, startAmount) to the first curve point.
+  if (curve.relativeBlocks[0]! > blockDelta) {
+    return linearDecay(0, curve.relativeBlocks[0]!, blockDelta, startAmount, startAmount - curve.relativeAmounts[0]!);
+  }
+  const [prev, next] = locate(curve.relativeBlocks, blockDelta);
+  const lastAmount = startAmount - curve.relativeAmounts[prev]!;
+  const nextAmount = startAmount - curve.relativeAmounts[next]!;
+  return linearDecay(curve.relativeBlocks[prev]!, curve.relativeBlocks[next]!, blockDelta, lastAmount, nextAmount);
+}
+
+/** Total output (summed over all legs) the swapper is owed at `blockNumber`, BEFORE any exclusivity handicap. */
+export function resolveOutputOwedAtBlock(order: ParsedOrder, blockNumber: number): bigint {
+  let total = 0n;
+  for (const o of order.outputs) total += decay(o.curve, o.startAmount, order.decayStartBlock, blockNumber);
+  return total;
+}
+
+/** Input amount the filler receives at `blockNumber` (constant for exact-in; decays for exact-out). */
+export function resolveInputAtBlock(order: ParsedOrder, blockNumber: number): bigint {
+  return decay(order.inputCurve, order.inputStartAmount, order.decayStartBlock, blockNumber);
 }
 
 /**
- * Gross spread in output-token units at a bid: what Ryze delivers minus what the order owes the swapper.
- * Positive means the fill is profitable before gas.
+ * Whether `filler` is inside the exclusivity window for `order` at `blockNumber` — i.e. someone else is the
+ * exclusive filler and the window (up to and including `decayStartBlock`) has not passed.
  */
-export function grossSpread(ryzeNetOut: bigint, orderOwedOut: bigint): bigint {
-  return ryzeNetOut - orderOwedOut;
+export function inExclusivityWindow(order: ParsedOrder, filler: string, blockNumber: number): boolean {
+  const excl = order.exclusiveFiller.toLowerCase();
+  if (excl === "0x0000000000000000000000000000000000000000") return false;
+  if (excl === filler.toLowerCase()) return false;
+  return blockNumber <= order.decayStartBlock;
+}
+
+/** Sentinel for an order a non-exclusive filler CANNOT fill (strict exclusivity, override == 0, in-window). */
+export const UNFILLABLE_EXCLUSIVE = -1n;
+
+/**
+ * Output `filler` must actually deliver at `blockNumber`, accounting for exclusivity. Equals the decayed owed for
+ * the exclusive filler (or after the window); for a non-exclusive filler still inside the window it is scaled up
+ * by `exclusivityOverrideBps` (rounded up), or {UNFILLABLE_EXCLUSIVE} under strict exclusivity.
+ */
+export function resolveOwedForFiller(order: ParsedOrder, filler: string, blockNumber: number): bigint {
+  const owed = resolveOutputOwedAtBlock(order, blockNumber);
+  if (!inExclusivityWindow(order, filler, blockNumber)) return owed;
+  if (order.exclusivityOverrideBps === 0) return UNFILLABLE_EXCLUSIVE;
+  return mulDivUp(owed, BPS + BigInt(order.exclusivityOverrideBps), BPS);
 }
 
 /** USD value (WAD) of `amount` base units of a token with `decimals`, priced at `priceWad` per full token. */
 export function usdWad(amount: bigint, decimals: number, priceWad: bigint): bigint {
   return (amount * priceWad) / 10n ** BigInt(decimals);
-}
-
-/**
- * The extra output an order owes when the effective priority fee rises from 0 to `effFeeWei`
- * (output-scaling orders only): `ceil(baseOutput * (MPS + effFee*mps)/MPS) - baseOutput`.
- */
-export function extraOutputFromEffFee(baseOutput: bigint, mpsPerWei: bigint, effFeeWei: bigint): bigint {
-  return scaleOutputUp(baseOutput, mpsPerWei, effFeeWei) - baseOutput;
-}
-
-/**
- * Smallest effective priority fee (wei) whose scaled-up output gives the swapper at least `extraOut` more output
- * (output-scaling orders, `mpsPerWei > 0`). Inverts `extraOutputFromEffFee`, rounding up so the target is met.
- * Returns 0 if `extraOut <= 0` or `mpsPerWei == 0`.
- */
-export function effFeeForExtraOut(baseOutput: bigint, mpsPerWei: bigint, extraOut: bigint): bigint {
-  if (extraOut <= 0n || mpsPerWei === 0n || baseOutput === 0n) return 0n;
-  // extraOut ≈ baseOutput * effFee * mpsPerWei / MPS  ⇒  effFee ≈ extraOut * MPS / (baseOutput * mpsPerWei)
-  return mulDivUp(extraOut, MPS, baseOutput * mpsPerWei);
 }

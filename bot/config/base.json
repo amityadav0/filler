@@ -1,16 +1,19 @@
 {
   "chainId": 8453,
   "chainName": "base",
-  "ordersApi": "https://api.uniswap.org/v2/orders?orderStatus=open&orderType=Priority&chainId=8453",
+  "orderType": "Dutch_V3",
+  "ordersApi": "https://api.uniswap.org/v2/orders?orderStatus=open&orderType=Dutch_V3&chainId=8453",
   "addresses": {
-    "reactor": "0x000000001Ec5656dcdB24D90DFa42742738De729",
+    "reactor": "0x000000008a8330B5d1F43A62Bf4C673A49f27ba0",
     "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
     "weth": "0x4200000000000000000000000000000000000006",
     "ryzeRouter": "0xCA8A097f627ef41Be12EbF7433F5B6b8A114D77b",
     "ryzeQueries": "0x14EB47280E7D34d8d826a431025487dad7648711",
     "ryzeOracle": "0x379dDf0B33aEf387426Bb9d30990A6c8CE3479F2",
-    "executor": "0x7acBe6faEabE85078D558bb6510D07dd4c40399e"
+    "executor": "0x0000000000000000000000000000000000000000"
   },
+  "_reactorNote": "reactor = V3DutchOrderReactor on Base — VERIFIED 2026-07-10 three ways: SDK REACTOR_ADDRESS_MAPPING[8453][Dutch_V3], docs.uniswap.org/contracts/uniswapx/deployments, and the `reactor` field decoded from live Base Dutch_V3 orders (all agree). Priority reactor (0x0000…De729) is retired for this bot.",
+  "_executorNote": "TODO(amit): the old executor (0x7acBe6…399e) is IMMUTABLY bound to the Priority reactor and cannot fill Dutch_V3. Deploy a fresh RyzeUniswapXExecutor bound to addresses.reactor (script/DeployExecutor, owner op — RUNBOOK §2), re-whitelist it on the Ryze router (setWhitelistedIntentSwapper, authority 0x0A2C…; pauseDirectSwap is ON), and set addresses.executor here. Shadow/quote use this as the eth_call `from` override; 0x0 is a harmless placeholder until deploy.",
   "oracle": {
     "pDeltaWad": "5000000000000000",
     "tToleranceMs": 3000,
@@ -75,20 +78,17 @@
     "payloadMaxAgeMs": 2000
   },
   "strategy": {
-    "spreadCaptureBps": 6000,
-    "improvingDirectionShadeBps": 500,
-    "worseningDirectionShadeBps": 500,
-    "reQuotePriceMoveBps": 20,
     "gasEstimate": 1300000,
     "minProfitUsdWad": "100000000000000000",
-    "maxBidPriorityFeeWei": "1000000000",
+    "maxInclusionPriorityFeeWei": "1000000000",
     "_gasEstimateNote": "fork-fill measured 1.15M gas for a real 1-hop fill (Permit2 + reactor + oracle verify + swap); 1.3M adds headroom. 350k (old value) would out-of-gas every fill.",
-    "_minProfitNote": "= $0.10 \u2014 never bid on break-even fills live; tune up from win data"
+    "_minProfitNote": "= $0.10 \u2014 never fill break-even orders live; tune up from win data",
+    "_inclusionFeeNote": "Dutch_V3: the tx priority fee is a pure inclusion/gas-race knob (owed output is fixed by the decay curve, unlike Priority orders). 1 gwei; raise only to win inclusion races, never to change economics."
   },
   "live": {
-    "maxTargetBlockLeadBlocks": 20,
-    "sendLeadBlocks": 1,
+    "maxDecayWaitBlocks": 6,
     "minDeadlineMs": 5000,
-    "receiptTimeoutMs": 30000
+    "receiptTimeoutMs": 30000,
+    "_maxDecayWaitBlocksNote": "Max blocks to wait for a non-exclusive order's exclusivity window to end (window closes at decayStartBlock). Audit: addressable curves span ~4 blocks (~8s on Base). Do not wait past a profitable point \u2014 a competitor takes it."
   }
 }

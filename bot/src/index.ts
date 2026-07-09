@@ -109,6 +109,7 @@ export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Pr
       await runDryRunPass({
         chainId: f.config.chainId,
         weth: f.config.addresses.weth,
+        filler: f.config.addresses.executor,
         assets: allPoolAssets(f.config),
         ingestor: f.ingestor,
         payloads: f.payloads,

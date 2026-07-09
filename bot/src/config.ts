@@ -8,6 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 export interface FillerConfig {
   chainId: number;
   chainName: string;
+  /** The single order type this bot fills. Must be "Dutch_V3". */
+  orderType: string;
   ordersApi: string;
   addresses: {
     reactor: Address;
@@ -39,23 +41,17 @@ export interface FillerConfig {
     payloadMaxAgeMs: number;
   };
   strategy: {
-    spreadCaptureBps: number;
-    improvingDirectionShadeBps: number;
-    worseningDirectionShadeBps: number;
-    reQuotePriceMoveBps: number;
-    /** Gas units to assume for a fill when estimating gas cost in shadow mode. */
+    /** Gas units to assume for a fill when estimating gas cost. */
     gasEstimate: number;
-    /** Minimum expected USD (WAD) profit to bid on an order. */
+    /** Minimum expected USD (WAD) profit to fill an order. */
     minProfitUsdWad: string;
-    /** Hard ceiling on the priority-fee bid (wei). */
-    maxBidPriorityFeeWei: string;
+    /** Inclusion priority fee (wei) attached to the fill tx — gas-race knob only (does not change owed output). */
+    maxInclusionPriorityFeeWei: string;
   };
   /** Live-send knobs (M4) — see live.ts. */
   live: {
-    /** Skip orders whose auctionTargetBlock is more than this many blocks ahead of now. */
-    maxTargetBlockLeadBlocks: number;
-    /** Send when within this many blocks of the target (Base ≈ 2s blocks; sequencer is FCFS). */
-    sendLeadBlocks: number;
+    /** Max blocks to wait for a non-exclusive order's exclusivity window to end (closes at decayStartBlock). */
+    maxDecayWaitBlocks: number;
     /** Skip orders whose deadline is closer than this to now (ms). */
     minDeadlineMs: number;
     /** How long to wait for a fill tx receipt before treating the attempt as unknown/lost (ms). */
@@ -70,10 +66,36 @@ export interface PoolConfig {
   bandLimits: { maxNotionalUsdWad: string };
 }
 
-/** Load a network config file (defaults to base.json). */
+/** Load a network config file (defaults to base.json), then validate it fail-closed. */
 export function loadConfig(network = "base"): FillerConfig {
   const path = join(here, "..", "config", `${network}.json`);
-  return JSON.parse(readFileSync(path, "utf8")) as FillerConfig;
+  const config = JSON.parse(readFileSync(path, "utf8")) as FillerConfig;
+  validateConfig(config);
+  return config;
+}
+
+/**
+ * Fail-closed validation: refuse to start on a config that would silently mis-fill. This bot supports EXACTLY one
+ * order type (Dutch_V3), and the safety caps must be present and non-negative (0 explicitly disables a cap in the
+ * risk rails, so we only reject negatives / missing required fields, not zero).
+ */
+export function validateConfig(config: FillerConfig): void {
+  const fail = (m: string) => {
+    throw new Error(`invalid filler config: ${m}`);
+  };
+  if (config.orderType !== "Dutch_V3") fail(`orderType must be "Dutch_V3", got ${JSON.stringify(config.orderType)}`);
+  if (!/orderType=Dutch_V3/.test(config.ordersApi)) fail("ordersApi must poll orderType=Dutch_V3");
+  const req = (v: string | number | undefined, name: string) => {
+    if (v === undefined || v === null || v === "") fail(`missing ${name}`);
+  };
+  req(config.strategy?.gasEstimate, "strategy.gasEstimate");
+  req(config.strategy?.minProfitUsdWad, "strategy.minProfitUsdWad");
+  req(config.strategy?.maxInclusionPriorityFeeWei, "strategy.maxInclusionPriorityFeeWei");
+  req(config.live?.maxDecayWaitBlocks, "live.maxDecayWaitBlocks");
+  req(config.live?.minDeadlineMs, "live.minDeadlineMs");
+  req(config.live?.receiptTimeoutMs, "live.receiptTimeoutMs");
+  if (BigInt(config.strategy.maxInclusionPriorityFeeWei) < 0n) fail("maxInclusionPriorityFeeWei < 0");
+  if (config.live.maxDecayWaitBlocks < 0) fail("maxDecayWaitBlocks < 0");
 }
 
 /**
