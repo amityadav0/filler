@@ -81,6 +81,9 @@ export async function prepareFill(
   deps.metrics.inc("orders.quoted");
   if (!quote) {
     deps.metrics.inc("orders.noPath");
+    // Log the pair: this is the dominant skip on Base Dutch_V3 (long-tail tokens outside the Ryze pools), and
+    // the aggregate pair histogram is exactly the "which pool should Ryze add next" dataset.
+    log(`skip ${order.orderHash.slice(0, 10)}: no Ryze path ${parsed.tokenIn} -> ${parsed.tokenOut}`);
     return null;
   }
 
@@ -89,6 +92,7 @@ export async function prepareFill(
   const priceOutWad = priceOf(parsed.tokenOut);
   if (priceInWad === undefined || priceOutWad === undefined) {
     deps.metrics.inc("orders.noPrice");
+    log(`skip ${order.orderHash.slice(0, 10)}: no signed price for ${priceInWad === undefined ? parsed.tokenIn : parsed.tokenOut}`);
     return null;
   }
   const nativePriceWad = payloads.prices.find((p) => p.token.toLowerCase() === weth)?.priceWad;
