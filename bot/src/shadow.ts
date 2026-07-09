@@ -104,7 +104,11 @@ export async function runShadowPass(deps: ShadowDeps): Promise<ShadowResult[]> {
     }
   }
 
-  const s = deps.payloads.stats();
-  log(`shadow pass: bids=${results.length}/${open.length} payloadCache hits=${s.hits} misses=${s.misses}`);
+  // Open Priority orders are rare (~10-30/day) and short-lived; only log passes that actually saw one, or a
+  // week-long shadow log is 86k lines of "bids=0/0". The loop heartbeat (index.ts) covers liveness.
+  if (open.length > 0) {
+    const s = deps.payloads.stats();
+    log(`shadow pass: bids=${results.length}/${open.length} payloadCache hits=${s.hits} misses=${s.misses}`);
+  }
   return results;
 }

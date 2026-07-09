@@ -13,7 +13,7 @@ import { hasPayloadEnv, loadPayloadEnv, loadOperatorWallet } from "./env.js";
 import { createQuoter } from "./quoter/index.js";
 import { createSubmitter } from "./submitter/index.js";
 import { createTokenMeta } from "./chain/tokens.js";
-import { createMetrics } from "./metrics/index.js";
+import { createMetrics, type Metrics } from "./metrics/index.js";
 import { createExposureTracker, createGasBudget } from "./strategy/risk.js";
 import { runDryRunPass } from "./dryRun.js";
 import { runShadowPass } from "./shadow.js";
@@ -56,6 +56,22 @@ export function createFiller(opts: FillerOptions = {}) {
   return { config, provider, ingestor, payloads, quoter, submitter, tokenMeta, metrics, signer };
 }
 
+/** Emit a cumulative-counters heartbeat every `everyPasses` iterations so long idle runs prove liveness. */
+function makeHeartbeat(label: string, metrics: Metrics, everyPasses = 300) {
+  let passes = 0;
+  return () => {
+    passes++;
+    if (passes % everyPasses !== 0) return;
+    const snap = metrics.snapshot();
+    const body = Object.keys(snap).length
+      ? Object.entries(snap)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(" ")
+      : "no orders seen yet";
+    console.log(`[heartbeat] ${label} pass=${passes} ${body}`);
+  };
+}
+
 /** Real payload source when the pipeline env is set; otherwise the unconfigured stub (throws on use). */
 function defaultPayloadSource(config: FillerConfig): PayloadSource {
   if (!hasPayloadEnv()) return createUnconfiguredSource();
@@ -87,6 +103,7 @@ function defaultPayloadSource(config: FillerConfig): PayloadSource {
 export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Promise<void> {
   const f = createFiller(opts);
   console.log(`filler dry-run on ${f.config.chainName} (chainId ${f.config.chainId})`);
+  const heartbeat = makeHeartbeat("dry-run", f.metrics);
   for (;;) {
     try {
       await runDryRunPass({
@@ -101,6 +118,7 @@ export async function runDryRun(opts: FillerOptions = {}, intervalMs = 1000): Pr
     } catch (err) {
       console.error(`dry-run pass failed: ${(err as Error).message}`);
     }
+    heartbeat();
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }
@@ -122,6 +140,7 @@ export async function runLive(opts: FillerOptions = {}, intervalMs = 1000): Prom
   );
   const exposure = createExposureTracker(BigInt(f.config.caps.maxOpenExposureUsdWadPerToken));
   const gasBudget = createGasBudget(BigInt(f.config.caps.maxRevertGasWeiPerHour));
+  const heartbeat = makeHeartbeat("live", f.metrics);
   for (;;) {
     try {
       await runLivePass({
@@ -139,6 +158,7 @@ export async function runLive(opts: FillerOptions = {}, intervalMs = 1000): Prom
     } catch (err) {
       console.error(`live pass failed: ${(err as Error).message}`);
     }
+    heartbeat();
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }
@@ -149,6 +169,7 @@ export async function runShadow(opts: FillerOptions = {}, intervalMs = 1000): Pr
   console.log(`filler SHADOW on ${f.config.chainName} (chainId ${f.config.chainId}) — no txs will be sent`);
   // Exposure rail persists across passes so cumulative would-be commitment per token is bounded.
   const exposure = createExposureTracker(BigInt(f.config.caps.maxOpenExposureUsdWadPerToken));
+  const heartbeat = makeHeartbeat("shadow", f.metrics);
   for (;;) {
     try {
       await runShadowPass({
@@ -165,6 +186,7 @@ export async function runShadow(opts: FillerOptions = {}, intervalMs = 1000): Pr
     } catch (err) {
       console.error(`shadow pass failed: ${(err as Error).message}`);
     }
+    heartbeat();
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }

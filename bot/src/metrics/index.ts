@@ -2,6 +2,8 @@
 export interface Metrics {
   inc(name: string, by?: number): void;
   observe(name: string, value: number): void;
+  /** Cumulative counter values (sorted by name) — used by the loop heartbeat; Prometheus registry is M5. */
+  snapshot(): Record<string, number>;
 }
 
 export function createMetrics(): Metrics {
@@ -11,7 +13,10 @@ export function createMetrics(): Metrics {
       counters.set(name, (counters.get(name) ?? 0) + by);
     },
     observe(_name: string, _value: number): void {
-      // wired to a Prometheus registry in M3
+      // wired to a Prometheus registry in M5
+    },
+    snapshot(): Record<string, number> {
+      return Object.fromEntries([...counters.entries()].sort(([a], [b]) => a.localeCompare(b)));
     },
   };
 }

@@ -183,7 +183,10 @@ export async function runLivePass(deps: LiveDeps): Promise<LiveResult[]> {
     }
   }
 
-  const s = deps.payloads.stats();
-  log(`live pass: sent=${results.length}/${open.length} won=${results.filter((r) => r.won).length} payloadCache hits=${s.hits} misses=${s.misses}`);
+  // Quiet when idle (open orders are rare and short-lived); the loop heartbeat covers liveness.
+  if (open.length > 0) {
+    const s = deps.payloads.stats();
+    log(`live pass: sent=${results.length}/${open.length} won=${results.filter((r) => r.won).length} payloadCache hits=${s.hits} misses=${s.misses}`);
+  }
   return results;
 }
