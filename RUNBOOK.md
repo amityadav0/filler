@@ -15,7 +15,7 @@ without owner sign-off (ARCHITECTURE §7).**
 | WETH-USDC pool | `0x22f902cEfcF8b0bEc6489Cb8ac11FdDa9B2aF125` |
 | WBTC-USDC pool | `0x40F3DAaE59BfE03f9Fb019Bb089Bb0C381DE27Cf` |
 | Ryze pool owner (whitelist authority) | `0x0A2C3a5b964658EAC71819778A9429F1dd3071C2` |
-| Executor | _set after deploy (§2)_ |
+| **Executor (DEPLOYED 2026-07-09)** | `0x7acBe6faEabE85078D558bb6510D07dd4c40399e` (owner/operator `0x69fc31e5…f123E`; USDC/WETH/cbBTC max-approved to router; deploy tx `0xa7869bc3…4959`) |
 
 Tokens: USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, WETH `0x4200…0006`,
 WBTC `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf`. Pyth Lazer feed ids: WETH `631`, USDC `7`, WBTC `397`.

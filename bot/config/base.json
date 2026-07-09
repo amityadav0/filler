@@ -9,9 +9,8 @@
     "ryzeRouter": "0xCA8A097f627ef41Be12EbF7433F5B6b8A114D77b",
     "ryzeQueries": "0x14EB47280E7D34d8d826a431025487dad7648711",
     "ryzeOracle": "0x379dDf0B33aEf387426Bb9d30990A6c8CE3479F2",
-    "executor": "0x0000000000000000000000000000000000000000"
+    "executor": "0x7acBe6faEabE85078D558bb6510D07dd4c40399e"
   },
-  "_executorTodo": "set after RyzeUniswapXExecutor is deployed to Base (script/DeployExecutor.s.sol). Until then the quoter's from-override and submitter tx target are the zero address.",
   "oracle": {
     "pDeltaWad": "5000000000000000",
     "tToleranceMs": 3000,
