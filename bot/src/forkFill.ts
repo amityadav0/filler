@@ -91,24 +91,43 @@ async function main(): Promise<void> {
   await provider.send("anvil_setBalance", [swapper.address, "0x8AC7230489E80000"]); // 10 ETH
   const log = (m: string) => console.log(`[fork-fill] ${m}`);
 
-  // --- 1. Deploy the executor from the forge artifact (identical bytecode to the mainnet deploy) --------------
-  const artifactPath = join(dirname(fileURLToPath(import.meta.url)), "../../out/RyzeUniswapXExecutor.sol/RyzeUniswapXExecutor.json");
-  const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as { abi: unknown[]; bytecode: { object: string } };
-  const factory = new ContractFactory(artifact.abi as never, artifact.bytecode.object, owner);
-  const executorContract = await (await factory.deploy(reactor, ryzeRouter, WETH, owner.address, operator.address)).waitForDeployment();
-  const executor = (await executorContract.getAddress()) as Address;
-  log(`executor deployed at ${executor}`);
+  // EXECUTOR_ADDRESS: exercise the REAL deployed executor (and the real router whitelist) instead of deploying a
+  // fresh one — the final pre-live gate. Its on-chain operator is impersonated to sign the fill.
+  const execOverride = process.env.EXECUTOR_ADDRESS as Address | undefined;
 
-  // --- 2. OQ-2 probe: is direct swap restricted? If so, whitelist the executor as the pool owner would --------
+  // --- 1+2. Executor: use the REAL deployed one when EXECUTOR_ADDRESS is set (final pre-live gate: exercises
+  // the on-chain whitelist and the exact deployed bytecode); otherwise deploy fresh from the forge artifact and
+  // whitelist it by impersonating the pool owner.
+  let executor: Address;
+  let fillSigner = operator as unknown as import("ethers").Signer;
   const router = new Contract(ryzeRouter, ROUTER_ABI, provider);
-  const paused = (await router.pauseDirectSwap()) as boolean;
-  log(`router.pauseDirectSwap = ${paused} (OQ-2)`);
-  if (paused) {
-    await provider.send("anvil_impersonateAccount", [RYZE_POOL_OWNER]);
-    await provider.send("anvil_setBalance", [RYZE_POOL_OWNER, "0x1000000000000000000"]);
-    const ownerSigner = await provider.getSigner(RYZE_POOL_OWNER);
-    await (await (router.connect(ownerSigner) as Contract).setWhitelistedIntentSwapper(executor, true)).wait();
-    log(`whitelisted executor on router (impersonated pool owner) — M4 hard dependency confirmed`);
+  if (execOverride) {
+    executor = execOverride;
+    const realOperator = (await new Contract(executor, ["function operator() view returns (address)"], provider).operator()) as string;
+    await provider.send("anvil_impersonateAccount", [realOperator]);
+    await provider.send("anvil_setBalance", [realOperator, "0x8AC7230489E80000"]);
+    fillSigner = await provider.getSigner(realOperator);
+    log(`using REAL executor ${executor}, impersonating its operator ${realOperator}`);
+    const wl = (await router.isWhitelistedIntentSwapper(executor)) as boolean;
+    log(`router whitelist for executor: ${wl} (must be true — no impersonated whitelist in this mode)`);
+    if (!wl) throw new Error("real executor is NOT whitelisted on the router");
+  } else {
+    const artifactPath = join(dirname(fileURLToPath(import.meta.url)), "../../out/RyzeUniswapXExecutor.sol/RyzeUniswapXExecutor.json");
+    const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as { abi: unknown[]; bytecode: { object: string } };
+    const factory = new ContractFactory(artifact.abi as never, artifact.bytecode.object, owner);
+    const executorContract = await (await factory.deploy(reactor, ryzeRouter, WETH, owner.address, operator.address)).waitForDeployment();
+    executor = (await executorContract.getAddress()) as Address;
+    log(`executor deployed at ${executor}`);
+
+    const paused = (await router.pauseDirectSwap()) as boolean;
+    log(`router.pauseDirectSwap = ${paused} (OQ-2)`);
+    if (paused) {
+      await provider.send("anvil_impersonateAccount", [RYZE_POOL_OWNER]);
+      await provider.send("anvil_setBalance", [RYZE_POOL_OWNER, "0x1000000000000000000"]);
+      const ownerSigner = await provider.getSigner(RYZE_POOL_OWNER);
+      await (await (router.connect(ownerSigner) as Contract).setWhitelistedIntentSwapper(executor, true)).wait();
+      log(`whitelisted executor on router (impersonated pool owner) — M4 hard dependency confirmed`);
+    }
   }
 
   // --- 3. Fund the swapper: wrap ETH → WETH, approve Permit2 --------------------------------------------------
@@ -230,7 +249,7 @@ async function main(): Promise<void> {
   await provider.send("evm_setNextBlockTimestamp", [warpTo]);
 
   const nonEmptyBlobs = payloads.pythUpdateData.filter((b) => b && b !== "0x").length;
-  const submitter = createSubmitter({ executor, chainId: 8453, signer: operator });
+  const submitter = createSubmitter({ executor, chainId: 8453, signer: fillSigner });
   const usdcBefore = (await new Contract(USDC, ERC20_ABI, provider).balanceOf(swapper.address)) as bigint;
 
   const outcome = await submitter.submit(
