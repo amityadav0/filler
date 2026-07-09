@@ -51,12 +51,19 @@ throws on use (so nothing runs on fabricated prices).
 
 ## 2. Deploy the executor (owner op — M4 prep)
 
+Recommended signing: an encrypted Foundry keystore (`cast wallet import <name> --interactive`) instead of a raw
+`PRIVATE_KEY` env. `OWNER`/`OPERATOR` env are optional and default to the deployer (the one-key test setup —
+rotate later with `setOperator` / `transferOwnership`, no redeploy; the router whitelist is on the contract
+address and survives key rotation).
+
 ```bash
-# dry run first
-forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL
-# broadcast + verify (deployer = OWNER lets it also pre-approve the router)
+SENDER=$(cast wallet address --account operator)     # keystore name from `cast wallet import`
+# dry run first (no --broadcast)
+forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL --account operator --sender $SENDER
+# broadcast + verify (deployer == owner ⇒ router pre-approvals happen in the same run)
 APPROVE_USDC=true APPROVE_WETH=true APPROVE_WBTC=true \
-  forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify
+  forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL \
+  --account operator --sender $SENDER --broadcast --verify
 ```
 
 Then set the printed address as `addresses.executor` in `bot/config/base.json`.

@@ -17,15 +17,17 @@ import {IRyzeRouter} from "../src/interfaces/IRyzeRouter.sol";
 ///        2. have the Ryze pool owner whitelist the executor on the router if `pauseDirectSwap` is set (OQ-2);
 ///        3. do NOT enable live sends until owner sign-off (M4).
 ///
-///      Usage (dry run):
-///        forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL
-///      Broadcast:
-///        forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify
+///      Usage — encrypted keystore (recommended; created via `cast wallet import <name> --interactive`):
+///        forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL \
+///          --account <name> --sender $(cast wallet address --account <name>) --broadcast --verify
+///      Usage — raw key env (legacy):
+///        PRIVATE_KEY=0x... forge script script/DeployExecutor.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify
+///      Omit --broadcast for a dry run.
 ///
-///      Required env: PRIVATE_KEY (deployer), OWNER, OPERATOR.
-///      Optional env (default to Base mainnet): REACTOR, RYZE_ROUTER, WETH.
-///      Optional: APPROVE_TOKENS = comma-free repeated via APPROVE_TOKEN_0..N is avoided; instead set
-///      APPROVE_USDC / APPROVE_WETH / APPROVE_WBTC = true to pre-approve those known tokens (max allowance).
+///      Env (all optional): OWNER, OPERATOR (both default to the deployer — the one-key test setup;
+///      rotate later with setOperator/transferOwnership, no redeploy); REACTOR, RYZE_ROUTER, WETH
+///      (default to Base mainnet); APPROVE_USDC / APPROVE_WETH / APPROVE_WBTC = true to pre-approve
+///      those tokens to the router (max allowance; runs only when the deployer is the owner).
 contract DeployExecutor is Script {
     // Base mainnet defaults.
     address constant DEFAULT_REACTOR = 0x000000001Ec5656dcdB24D90DFa42742738De729;
@@ -35,10 +37,24 @@ contract DeployExecutor is Script {
     address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address constant WBTC = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf;
 
+    /// @dev Forge's default script sender — seeing it as the deployer means the caller forgot `--sender`
+    ///      alongside `--account`, and the owner-gated pre-approvals would silently misfire.
+    address constant FOUNDRY_DEFAULT_SENDER = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
+
     function run() external returns (RyzeUniswapXExecutor executor) {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address owner = vm.envAddress("OWNER");
-        address operator = vm.envAddress("OPERATOR");
+        // Deployer = the broadcasting account. Two signing flows:
+        //   - PRIVATE_KEY env set → derive the address and broadcast with the raw key (legacy);
+        //   - otherwise → keystore flow: forge signs via `--account <name>`, and `--sender` makes msg.sender the
+        //     broadcaster. Gate the owner-only pre-approvals on THIS address, never on bare `msg.sender` under
+        //     the raw-key flow (startBroadcast(pk) does not change the script's msg.sender).
+        uint256 pk = vm.envOr("PRIVATE_KEY", uint256(0));
+        address deployer = pk != 0 ? vm.addr(pk) : msg.sender;
+        require(
+            deployer != FOUNDRY_DEFAULT_SENDER, "keystore flow: pass --sender $(cast wallet address --account <name>)"
+        );
+
+        address owner = vm.envOr("OWNER", deployer);
+        address operator = vm.envOr("OPERATOR", deployer);
         address reactor = vm.envOr("REACTOR", DEFAULT_REACTOR);
         address router = vm.envOr("RYZE_ROUTER", DEFAULT_ROUTER);
         address weth = vm.envOr("WETH", DEFAULT_WETH);
@@ -46,12 +62,11 @@ contract DeployExecutor is Script {
         require(owner != address(0), "OWNER unset");
         require(operator != address(0), "OPERATOR unset");
 
-        // The address broadcasting the txs (= PRIVATE_KEY's address). Gate the owner-only pre-approvals on THIS,
-        // not `msg.sender`: inside a forge script `msg.sender` is the script's caller (default sender), which is
-        // unaffected by `startBroadcast(pk)` — using it would skip the approvals even when the deployer is owner.
-        address deployer = vm.addr(pk);
-
-        vm.startBroadcast(pk);
+        if (pk != 0) {
+            vm.startBroadcast(pk);
+        } else {
+            vm.startBroadcast();
+        }
 
         executor = new RyzeUniswapXExecutor(IReactor(reactor), IRyzeRouter(router), IWETH(weth), owner, operator);
         console2.log("RyzeUniswapXExecutor deployed at:", address(executor));
