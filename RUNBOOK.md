@@ -27,6 +27,9 @@ Secrets live in the environment, never in committed config:
 ```bash
 export RPC_URL=https://mainnet.base.org          # or a private Base RPC
 export BASE_RPC_URL=$RPC_URL                      # forge fork/deploy
+# If the private RPC needs an Authorization header (forge/anvil can't send one), run the local injector:
+#   UPSTREAM_RPC_URL=http://<host>/ UPSTREAM_RPC_AUTH="Bearer <token>" node scripts/rpc-proxy.mjs &
+#   export BASE_RPC_URL=http://127.0.0.1:8552
 # payload pipeline (bot):
 export PYTH_PRO_ACCESS_TOKEN=<token>                       # Pyth Lazer Bearer token
 # signed-CEX WS (subscribe by symbol). Feed is SPLIT across hosts — list BOTH (USDC on one, ETH/BTC on the other):
