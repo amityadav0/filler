@@ -302,7 +302,10 @@ async function main(): Promise<void> {
     true,
   );
   if (!outcome.sent || !outcome.txHash) throw new Error("submitter did not send");
-  const receipt = await provider.waitForTransaction(outcome.txHash, 1, 30_000);
+  // A public-RPC-backed fork executes the first heavy fill slowly (cold state fetched over the network for the
+  // oracle verify + pool math), so allow a generous receipt window here — this is fork-harness latency, not the
+  // on-chain fill (config.live.receiptTimeoutMs governs the real live loop).
+  const receipt = await provider.waitForTransaction(outcome.txHash, 1, 180_000);
   if (!receipt || receipt.status !== 1) throw new Error(`fill tx reverted: ${outcome.txHash}`);
   log(`fill LANDED: tx=${outcome.txHash} gasUsed=${receipt.gasUsed} effGasPrice=${receipt.gasPrice}`);
 

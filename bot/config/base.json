@@ -10,10 +10,10 @@
     "ryzeRouter": "0xCA8A097f627ef41Be12EbF7433F5B6b8A114D77b",
     "ryzeQueries": "0x14EB47280E7D34d8d826a431025487dad7648711",
     "ryzeOracle": "0x379dDf0B33aEf387426Bb9d30990A6c8CE3479F2",
-    "executor": "0x0000000000000000000000000000000000000000"
+    "executor": "0x2ddB025E7A7189E682c72eEc32189d6C0837e4FC"
   },
-  "_reactorNote": "reactor = V3DutchOrderReactor on Base — VERIFIED 2026-07-10 three ways: SDK REACTOR_ADDRESS_MAPPING[8453][Dutch_V3], docs.uniswap.org/contracts/uniswapx/deployments, and the `reactor` field decoded from live Base Dutch_V3 orders (all agree). Priority reactor (0x0000…De729) is retired for this bot.",
-  "_executorNote": "TODO(amit): the old executor (0x7acBe6…399e) is IMMUTABLY bound to the Priority reactor and cannot fill Dutch_V3. Deploy a fresh RyzeUniswapXExecutor bound to addresses.reactor (script/DeployExecutor, owner op — RUNBOOK §2), re-whitelist it on the Ryze router (setWhitelistedIntentSwapper, authority 0x0A2C…; pauseDirectSwap is ON), and set addresses.executor here. Shadow/quote use this as the eth_call `from` override; 0x0 is a harmless placeholder until deploy.",
+  "_reactorNote": "reactor = V3DutchOrderReactor on Base \u2014 VERIFIED 2026-07-10 three ways: SDK REACTOR_ADDRESS_MAPPING[8453][Dutch_V3], docs.uniswap.org/contracts/uniswapx/deployments, and the `reactor` field decoded from live Base Dutch_V3 orders (all agree). Priority reactor (0x0000\u2026De729) is retired for this bot.",
+  "_executorNote": "executor = RyzeUniswapXExecutor bound to the V3DutchOrderReactor, DEPLOYED 2026-07-10 (tx 0x2c9647f0c1e06c9cd2442fafca03626e833b1cb7f3f7e83db4762bd5d1378b3b, block 48417372; owner/operator 0x69fc31e5\u2026f123E; USDC/WETH/cbBTC max-approved to the router). The retired Priority-bound executor was 0x7acBe6\u2026399e. Whitelist on the router is a pool-owner op and does NOT carry over between executors.",
   "oracle": {
     "pDeltaWad": "5000000000000000",
     "tToleranceMs": 3000,

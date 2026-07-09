@@ -15,7 +15,7 @@ without owner sign-off (ARCHITECTURE §7).**
 | WETH-USDC pool | `0x22f902cEfcF8b0bEc6489Cb8ac11FdDa9B2aF125` |
 | cbBTC-USDC pool | `0x40F3DAaE59BfE03f9Fb019Bb089Bb0C381DE27Cf` |
 | Ryze pool owner (whitelist authority) | `0x0A2C3a5b964658EAC71819778A9429F1dd3071C2` |
-| **Executor** | ⚠️ **REDEPLOY REQUIRED for Dutch_V3.** The old executor `0x7acBe6faEabE85078D558bb6510D07dd4c40399e` is IMMUTABLY bound to the retired Priority reactor and cannot fill Dutch_V3. Deploy a fresh one bound to the V3DutchOrderReactor (§2, `REACTOR` now defaults to it), whitelist it on the router, then set `addresses.executor` in `bot/config/base.json`. |
+| **Executor (Dutch_V3, DEPLOYED 2026-07-10)** | `0x2ddB025E7A7189E682c72eEc32189d6C0837e4FC` — bound to the V3DutchOrderReactor (deploy tx `0x2c9647f0…8b3b`, block 48417372; owner/operator `0x69fc31e5…f123E`; USDC/WETH/cbBTC max-approved). ⏳ Router whitelist pending (pool-owner op; does NOT carry over from the retired Priority executor `0x7acBe6…399e`). |
 
 > **Order type migrated Priority → Dutch_V3 (2026-07-10).** The Priority reactor `0x0000…De729` is retired for
 > this bot (Priority flow on Base is ~3 fills/day vs Dutch_V3 ~85/day). See [DUTCH-V3-AUDIT.md](./DUTCH-V3-AUDIT.md).
