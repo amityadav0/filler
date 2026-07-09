@@ -111,11 +111,17 @@ band limits) and tune `strategy.spreadCaptureBps` in the config.
 
 Only after shadow review + sign-off:
 1. Confirm caps in `bot/config/base.json` are small: `caps.maxNotionalUsdWadPerFill`,
-   `caps.maxOpenExposureUsdWadPerToken`, `caps.maxRevertGasWeiPerHour`.
+   `caps.maxOpenExposureUsdWadPerToken`, `caps.maxRevertGasWeiPerHour`; `strategy.minProfitUsdWad` > 0.
 2. Fund the `OPERATOR` hot key with a little ETH for gas.
-3. Flip the submitter to live (`send: true`) — currently gated in `bot/src/submitter/index.ts`; the live path is
-   intentionally not reachable from `runShadow`. Wire the reverted-gas budget (`createGasBudget`) into the send
-   path so losing bids stop once `maxRevertGasWeiPerHour` is hit.
+3. Run the live loop (`bot/src/live.ts` — target-block gating, deadline guard, send-time re-quote, reverted-gas
+   budget, in-flight exposure holds are all built in):
+
+   ```bash
+   export OPERATOR_KEYSTORE=~/.foundry/keystores/operator     # encrypted V3 keystore (cast wallet import)
+   export OPERATOR_KEYSTORE_PASSWORD=<password>               # or OPERATOR_PRIVATE_KEY for throwaway tests
+   MODE=live npm run live
+   ```
+
 4. Verify ONE won fill end-to-end (swapper paid, executor kept spread, `sweep` works), then scale caps.
 
 ## 6. Monitoring & safety

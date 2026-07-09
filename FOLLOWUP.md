@@ -46,18 +46,22 @@ Fixed in the same change as this doc:
   future batch entrypoint would have under-sourced. Now reverts `SingleOrderOnly` (baked in pre-deploy).
 - ✅ **dryRun payload coverage** — now fetches all pool assets (`allPoolAssets`), same as shadow.
 
-### L1 — live send path (Phase 1 step 4, must precede `send: true`)
+### L1 — live send path ✅ DONE (2026-07-09, `bot/src/live.ts`)
 
-The shadow loop builds txs but the live path needs order-lifecycle awareness the shadow never exercises:
+All five items implemented and unit-tested (`bot/test/live.test.ts`); shared per-order evaluation extracted to
+`prepare.ts` (used by both shadow and live):
 
-1. **`auctionTargetBlock` gating**: a fill submitted before the target block reverts `OrderNotFillable`.
-   Submit targeting that block (or schedule); skip orders whose `deadline` is near.
-2. **Gas-budget consumption**: `createGasBudget` exists (`strategy/risk.ts`) but is not consulted/recorded by
-   any send path. Wire: check `canSpend` before send; `record()` when a sent fill reverts (lost auction).
-3. **Exposure lifecycle**: on `sent: true`, hold exposure until the fill settles/reverts, then `release`.
-4. **Config**: set `minProfitUsdWad` > 0 (currently `"0"` — would bid on break-even fills).
-5. **Re-quote-at-send**: payloads are fetched at quote time; re-fetch immediately before send and re-check the
-   spread if price moved > `reQuotePriceMoveBps` (config knob exists, unused).
+1. ✅ `auctionTargetBlock` gating — waits until `target − sendLeadBlocks`, skips targets > `maxTargetBlockLeadBlocks`
+   ahead and deadlines closer than `minDeadlineMs`.
+2. ✅ Gas budget — `canSpend(worst-case)` before send; `record(actual)` on revert/timeout; blocks further bids
+   once `maxRevertGasWeiPerHour` is consumed.
+3. ✅ Exposure lifecycle — held from send until the receipt lands (win, revert, or timeout), then released.
+4. ✅ `minProfitUsdWad` = $0.10 in config.
+5. ✅ Re-quote at send — fresh payloads fetched immediately before send; aborts if the fresh quote no longer
+   clears what the order owes at our bid.
+
+Run: `OPERATOR_KEYSTORE=~/.foundry/keystores/operator OPERATOR_KEYSTORE_PASSWORD=… MODE=live npm run live`
+(RUNBOOK §5). Signer loads from the encrypted foundry keystore — no raw key in env.
 
 ### L2 — robustness improvements (before or during early live)
 

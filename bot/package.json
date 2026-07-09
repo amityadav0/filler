@@ -10,7 +10,8 @@
     "test": "node --import tsx --test test/*.test.ts",
     "dry-run": "MODE=dryrun node --import tsx src/main.ts",
     "shadow": "MODE=shadow node --import tsx src/main.ts",
-    "fork-fill": "node --import tsx src/forkFill.ts"
+    "fork-fill": "node --import tsx src/forkFill.ts",
+    "live": "MODE=live node --import tsx src/main.ts"
   },
   "engines": {
     "node": ">=20"

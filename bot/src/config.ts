@@ -50,6 +50,17 @@ export interface FillerConfig {
     /** Hard ceiling on the priority-fee bid (wei). */
     maxBidPriorityFeeWei: string;
   };
+  /** Live-send knobs (M4) — see live.ts. */
+  live: {
+    /** Skip orders whose auctionTargetBlock is more than this many blocks ahead of now. */
+    maxTargetBlockLeadBlocks: number;
+    /** Send when within this many blocks of the target (Base ≈ 2s blocks; sequencer is FCFS). */
+    sendLeadBlocks: number;
+    /** Skip orders whose deadline is closer than this to now (ms). */
+    minDeadlineMs: number;
+    /** How long to wait for a fill tx receipt before treating the attempt as unknown/lost (ms). */
+    receiptTimeoutMs: number;
+  };
 }
 
 export interface PoolConfig {

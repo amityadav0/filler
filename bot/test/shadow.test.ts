@@ -42,7 +42,8 @@ const bundle: PayloadBundle = {
   cexPriceData: [],
   prices: [
     { token: USDC, priceWad: 1_000_000_000_000_000_000n },
-    { token: WETH, priceWad: 1_000_000_000_000_000_000n },
+    // $2000/WETH so the 0.1 WETH spread ≈ $200 clears the configured minProfitUsdWad floor ($0.10).
+    { token: WETH, priceWad: 2_000_000_000_000_000_000_000n },
   ],
   fetchedAtMs: 0,
 };

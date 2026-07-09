@@ -80,8 +80,15 @@
     "worseningDirectionShadeBps": 500,
     "reQuotePriceMoveBps": 20,
     "gasEstimate": 1300000,
-    "minProfitUsdWad": "0",
+    "minProfitUsdWad": "100000000000000000",
     "maxBidPriorityFeeWei": "1000000000",
-    "_gasEstimateNote": "fork-fill measured 1.15M gas for a real 1-hop fill (Permit2 + reactor + oracle verify + swap); 1.3M adds headroom. 350k (old value) would out-of-gas every fill."
+    "_gasEstimateNote": "fork-fill measured 1.15M gas for a real 1-hop fill (Permit2 + reactor + oracle verify + swap); 1.3M adds headroom. 350k (old value) would out-of-gas every fill.",
+    "_minProfitNote": "= $0.10 \u2014 never bid on break-even fills live; tune up from win data"
+  },
+  "live": {
+    "maxTargetBlockLeadBlocks": 20,
+    "sendLeadBlocks": 1,
+    "minDeadlineMs": 5000,
+    "receiptTimeoutMs": 30000
   }
 }

@@ -1,5 +1,26 @@
 // Runtime secrets/endpoints for the price-payload pipeline. Kept OUT of the committed JSON config because they
 // include an access token — read from the environment (see bot/README.md and the ryze-production-endpoints note).
+import { readFileSync } from "node:fs";
+import { Wallet } from "ethers";
+
+/**
+ * Load the operator signing wallet for live mode (unconnected — the caller attaches the provider):
+ *   - `OPERATOR_KEYSTORE` (path to an encrypted V3 keystore, e.g. `~/.foundry/keystores/operator` from
+ *     `cast wallet import`) + `OPERATOR_KEYSTORE_PASSWORD` — preferred, no raw key in the environment; or
+ *   - `OPERATOR_PRIVATE_KEY` (raw hex) — discouraged outside throwaway tests.
+ * Returns undefined when neither is configured (shadow/dry-run need no signer).
+ */
+export async function loadOperatorWallet(env: NodeJS.ProcessEnv = process.env): Promise<Wallet | undefined> {
+  if (env.OPERATOR_KEYSTORE) {
+    const pw = env.OPERATOR_KEYSTORE_PASSWORD;
+    if (!pw) throw new Error("OPERATOR_KEYSTORE set but OPERATOR_KEYSTORE_PASSWORD missing");
+    const json = readFileSync(env.OPERATOR_KEYSTORE, "utf8");
+    const w = await Wallet.fromEncryptedJson(json, pw);
+    return w as Wallet;
+  }
+  if (env.OPERATOR_PRIVATE_KEY) return new Wallet(env.OPERATOR_PRIVATE_KEY);
+  return undefined;
+}
 
 export interface PayloadEnv {
   /** Pyth Lazer (Pro) access token (Bearer). */
